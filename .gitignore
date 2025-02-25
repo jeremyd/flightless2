@@ -1,0 +1,5 @@
+flightless2
+flightless.db
+*.db
+*.env
+*.log
