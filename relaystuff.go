@@ -83,9 +83,9 @@ func doRelay(db *gorm.DB, ctx context.Context, url string) bool {
 	db.Model(fr).Where("url = ?", url).First(&fr)
 	if strings.Contains(fr.Status, "established") {
 		TheLog.Printf("connection already established to relay: %s\n", url)
-		//return true
 	}
 
+	// Connect with auth support
 	relay, err := nostr.RelayConnect(ctx, url)
 	if err != nil {
 		TheLog.Printf("failed initial connection to relay: %s, %s; skipping relay", url, err)
@@ -93,6 +93,22 @@ func doRelay(db *gorm.DB, ctx context.Context, url string) bool {
 		return false
 	}
 	nostrRelays = append(nostrRelays, relay)
+
+	// Set up auth handler
+	if account.Privatekey != "" {
+		// Decrypt the private key using the global Password
+		decryptedKey := Decrypt(string(Password), account.Privatekey)
+
+		// Set up auth with signing function
+		err = relay.Auth(ctx, func(evt *nostr.Event) error {
+			return evt.Sign(decryptedKey)
+		})
+		if err != nil {
+			TheLog.Printf("Failed to authenticate with relay %s: %v\n", url, err)
+		} else {
+			TheLog.Printf("Successfully authenticated with relay %s\n", url)
+		}
+	}
 
 	UpdateOrCreateRelayStatus(db, url, "connection established")
 
@@ -139,6 +155,20 @@ func doRelay(db *gorm.DB, ctx context.Context, url string) bool {
 	var thisHopFollows []Metadata
 	db.Model(&person).Association("Follows").Find(&thisHopFollows)
 
+	// add in pubkeys that we have conversations with
+	var allMessages []ChatMessage
+	DB.Where("to_pubkey = ?", pubkey).Find(&allMessages)
+
+	// group the messages by from_pubkey
+	conversations := make(map[string][]ChatMessage)
+	for _, message := range allMessages {
+		conversations[message.FromPubkey] = append(conversations[message.FromPubkey], message)
+	}
+
+	for p, _ := range conversations {
+		thisHopFollows = append(thisHopFollows, Metadata{PubkeyHex: p})
+	}
+
 	// Pick up where we left off for this relay based on last EOSE timestamp
 	var rs RelayStatus
 	db.Where("url = ?", url).First(&rs)
@@ -160,6 +190,7 @@ func doRelay(db *gorm.DB, ctx context.Context, url string) bool {
 
 	// BATCH filters into chunks of 1000 per filter.
 	var hop2Filters []nostr.Filter
+
 	counter := 0
 	lastCount := 0
 	if len(thisHopFollows) > 1000 {
@@ -240,7 +271,6 @@ func processSub(sub *nostr.Subscription, relay *nostr.Relay, pubkey string) {
 
 	if sub != nil {
 		for ev := range sub.Events {
-			TheLog.Printf("got event kind %d from relay %s", ev.Kind, relay.URL)
 			if ev.Kind == 0 {
 				// Metadata
 				m := Metadata{}
@@ -275,7 +305,7 @@ func processSub(sub *nostr.Subscription, relay *nostr.Relay, pubkey string) {
 					TheLog.Printf("Created metadata for %s, %s\n", m.Name, m.Nip05)
 				} else {
 					if checkMeta.MetadataUpdatedAt.After(ev.CreatedAt.Time()) || checkMeta.MetadataUpdatedAt.Equal(ev.CreatedAt.Time()) {
-						TheLog.Println("skipping old metadata for " + ev.PubKey)
+						//TheLog.Println("skipping old metadata for " + ev.PubKey)
 						continue
 					} else {
 						rowsUpdated := DB.Model(Metadata{}).Where("pubkey_hex = ?", m.PubkeyHex).Updates(&m).RowsAffected
@@ -297,7 +327,7 @@ func processSub(sub *nostr.Subscription, relay *nostr.Relay, pubkey string) {
 						PubkeyHex: ev.PubKey,
 						// set time to january 1st 1970
 						MetadataUpdatedAt: time.Unix(0, 0),
-						ContactsUpdatedAt: ev.CreatedAt.Time(),
+						ContactsUpdatedAt: time.Unix(0, 0),
 					}
 					DB.Create(&person)
 				}

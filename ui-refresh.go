@@ -172,5 +172,22 @@ func refreshV4(g *gocui.Gui, cursor int) error {
 		fmt.Fprintf(v4, "%s\n", relay.Url)
 	}
 
+	var RelayStatuses []RelayStatus
+	DB.Find(&RelayStatuses)
+	fmt.Fprintf(v4, "\nConnected relays:\n")
+	for _, relayStatus := range RelayStatuses {
+		var shortStatus string
+		if relayStatus.Status == "connection established" {
+			shortStatus = "⌛✅"
+		} else if relayStatus.Status == "connection established: EOSE" {
+			shortStatus = "✅"
+		} else if relayStatus.Status == "waiting" {
+			shortStatus = "⌛"
+		} else {
+			shortStatus = "❌"
+		}
+		fmt.Fprintf(v4, "%s %s\n", shortStatus, relayStatus.Url)
+	}
+
 	return nil
 }

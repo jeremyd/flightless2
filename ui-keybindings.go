@@ -36,6 +36,19 @@ func keybindings(g *gocui.Gui) error {
 		log.Panicln(err)
 	}
 
+	/* addrelay view */
+	if err := g.SetKeybinding("v2", rune(0x61), gocui.ModNone, addRelay); err != nil {
+		log.Panicln(err)
+	}
+	// add relay
+	if err := g.SetKeybinding("addrelay", gocui.KeyEnter, gocui.ModNone, doAddRelay); err != nil {
+		log.Panicln(err)
+	}
+	//cancel key
+	if err := g.SetKeybinding("addrelay", gocui.KeyEsc, gocui.ModNone, cancelAddRelay); err != nil {
+		log.Panicln(err)
+	}
+
 	/* search view */
 	if err := g.SetKeybinding("msg", gocui.KeyEnter, gocui.ModNone, doSearch); err != nil {
 		log.Panicln(err)
