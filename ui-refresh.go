@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/awesome-gocui/gocui"
@@ -10,6 +12,31 @@ import (
 
 // current page?
 var displayV2Meta []Metadata
+
+// wrapText wraps text to fit within a given width, preserving words
+func wrapText(text string, width int) string {
+	words := strings.Fields(strings.TrimSpace(text))
+	if len(words) == 0 {
+		return text
+	}
+
+	var wrapped strings.Builder
+	line := words[0]
+	spaceLeft := width - len(line)
+
+	for _, word := range words[1:] {
+		if len(word)+1 > spaceLeft {
+			wrapped.WriteString(line + "\n")
+			line = word
+			spaceLeft = width - len(line)
+		} else {
+			line += " " + word
+			spaceLeft -= len(word) + 1
+		}
+	}
+	wrapped.WriteString(line)
+	return wrapped.String()
+}
 
 func refreshV2Conversations(g *gocui.Gui, v *gocui.View) error {
 	v2, _ := g.View("v2")
@@ -77,6 +104,59 @@ func refreshV2Conversations(g *gocui.Gui, v *gocui.View) error {
 		v2.SetHighlight(0, true)
 	}
 
+	return nil
+}
+
+func refreshV3(g *gocui.Gui, cy int) error {
+	v3, _ := g.View("v3")
+	v3.Clear()
+	if len(displayV2Meta) != 0 && cy <= len(displayV2Meta) {
+		var account Account
+		DB.First(&account, "active = ?", true)
+		var toMe []ChatMessage
+		var fromMe []ChatMessage
+		if err := DB.Find(&toMe, "from_pubkey = ? AND to_pubkey = ?", displayV2Meta[cy].PubkeyHex, account.Pubkey).Error; err != nil {
+			TheLog.Printf("error getting conversation messages: %s", err)
+			return err
+		}
+		if err := DB.Find(&fromMe, "from_pubkey = ? AND to_pubkey = ?", account.Pubkey, displayV2Meta[cy].PubkeyHex).Error; err != nil {
+			TheLog.Printf("error getting conversation messages: %s", err)
+			return err
+		}
+		// Example combining messages from different sources
+		var allMessages []ChatMessage
+		allMessages = append(allMessages, toMe...)
+		allMessages = append(allMessages, fromMe...)
+		// Sort by timestamp
+		sort.Slice(allMessages, func(i, j int) bool {
+			return allMessages[i].Timestamp.Before(allMessages[j].Timestamp)
+		})
+		TheLog.Printf("refreshing v3 with %d messages to me", len(toMe))
+		TheLog.Printf("refreshing v3 with %d messages from me", len(fromMe))
+
+		width, _ := v3.Size()
+		// Account for borders and some padding
+		contentWidth := width - 10
+
+		var buffer strings.Builder
+		for _, message := range allMessages {
+			humanTime := message.Timestamp.Format("Jan _2 3:04 PM")
+			if message.FromPubkey == displayV2Meta[cy].PubkeyHex {
+				header := fmt.Sprintf("\x1b[1;40m%s (%s):\x1b[0m\n", displayV2Meta[cy].Name, humanTime)
+				buffer.WriteString(header)
+				wrappedContent := wrapText(message.Content, contentWidth)
+				buffer.WriteString(wrappedContent)
+				buffer.WriteString("\n\n")
+			} else {
+				header := fmt.Sprintf("\x1b[1;44m-> (%s)\x1b[0m\n", humanTime)
+				buffer.WriteString(header)
+				wrappedContent := wrapText(message.Content, contentWidth)
+				buffer.WriteString(wrappedContent)
+				buffer.WriteString("\n\n")
+			}
+		}
+		v3.Write([]byte(buffer.String()))
+	}
 	return nil
 }
 

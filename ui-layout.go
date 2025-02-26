@@ -49,12 +49,12 @@ func layout(g *gocui.Gui) error {
 			return err
 		}
 		v.Title = "Compose"
-		v.Wrap = true
-		v.Autoscroll = false
+		v.Wrap = false
+		v.Autoscroll = true
 		v.BgColor = useBg
 		v.FgColor = useFg
 		v.FrameColor = useFrame
-		v.Editable = true
+		v.Editable = false
 	}
 
 	if v, err := g.SetView("v4", maxX-29, 1, maxX-1, maxY-6, 4); err != nil {

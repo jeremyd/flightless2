@@ -141,7 +141,6 @@ func doSearch(g *gocui.Gui, v *gocui.View) error {
 func cursorDownV2(g *gocui.Gui, v *gocui.View) error {
 	if v != nil {
 		cx, cy := v.Cursor()
-		TheLog.Println("cursor down v2 cx", cx, "cy", cy)
 		_, vSizeY := v.Size()
 
 		// Check if we're at the end of the list
@@ -151,7 +150,6 @@ func cursorDownV2(g *gocui.Gui, v *gocui.View) error {
 		}
 
 		if (cy + CurrOffset + 1) >= totalItems {
-			TheLog.Println("cursor down woooot")
 			return nil
 		}
 
@@ -160,7 +158,6 @@ func cursorDownV2(g *gocui.Gui, v *gocui.View) error {
 
 		// If we're at the bottom of the view, move to next page
 		if (cy + 1) >= (vSizeY - 1) {
-			TheLog.Println("cursor down v2: at bottom move to next page")
 			if err := v.SetCursor(0, 0); err != nil {
 				if err := v.SetOrigin(0, 0); err != nil {
 					return err
@@ -180,6 +177,7 @@ func cursorDownV2(g *gocui.Gui, v *gocui.View) error {
 			}
 		}
 		v.SetHighlight(cy+1, true)
+		refreshV3(g, cy+1)
 		refreshV4(g, cy+1)
 	}
 	return nil
@@ -227,6 +225,7 @@ func cursorUpV2(g *gocui.Gui, v *gocui.View) error {
 			}
 		}
 		v.SetHighlight(cy-1, true)
+		refreshV3(g, cy-1)
 		refreshV4(g, cy-1)
 	}
 	return nil

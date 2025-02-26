@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"net/http"
+
 	"github.com/jeremyd/crusher17"
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/nbd-wtf/go-nostr/nip19"
@@ -18,6 +20,54 @@ import (
 
 var nostrSubs []*nostr.Subscription
 var nostrRelays []*nostr.Relay
+
+type RelayLimitation struct {
+	AuthRequired bool `json:"auth_required"`
+}
+
+type RelayInfo struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	PubKey      string          `json:"pubkey"`
+	Contact     string          `json:"contact"`
+	Supported   []int           `json:"supported_nips"`
+	Software    string          `json:"software"`
+	Version     string          `json:"version"`
+	Limitation  RelayLimitation `json:"limitation"`
+}
+
+func checkRelayRequiresAuth(url string) bool {
+	httpURL := strings.Replace(strings.Replace(url, "ws://", "http://", 1), "wss://", "https://", 1)
+
+	client := &http.Client{
+		Timeout: time.Second * 5,
+	}
+
+	req, err := http.NewRequest("GET", httpURL, nil)
+	if err != nil {
+		TheLog.Printf("Error creating request for relay info: %v\n", err)
+		return false
+	}
+
+	req.Header.Set("Accept", "application/nostr+json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		TheLog.Printf("Error getting relay info: %v\n", err)
+		return false
+	}
+	defer resp.Body.Close()
+
+	var info RelayInfo
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		TheLog.Printf("Error decoding relay info: %v\n", err)
+		return false
+	}
+
+	TheLog.Printf("Relay info: %+v\n", info)
+
+	return info.Limitation.AuthRequired
+}
 
 func isHex(s string) bool {
 	dst := make([]byte, hex.DecodedLen(len(s)))
@@ -94,8 +144,8 @@ func doRelay(db *gorm.DB, ctx context.Context, url string) bool {
 	}
 	nostrRelays = append(nostrRelays, relay)
 
-	// Set up auth handler
-	if account.Privatekey != "" {
+	// Check if relay requires auth via NIP-11
+	if account.Privatekey != "" && checkRelayRequiresAuth(url) {
 		// Decrypt the private key using the global Password
 		decryptedKey := Decrypt(string(Password), account.Privatekey)
 
@@ -136,7 +186,7 @@ func doRelay(db *gorm.DB, ctx context.Context, url string) bool {
 		},
 		{
 			Kinds: []int{1059},
-			Limit: 10,
+			Limit: 2000,
 			Tags: nostr.TagMap{
 				"p": []string{pubkey},
 			},
@@ -440,9 +490,8 @@ func processSub(sub *nostr.Subscription, relay *nostr.Relay, pubkey string) {
 				}
 			} else if ev.Kind == 1059 {
 				// Message
-				TheLog.Printf("Received message event: %v", ev)
 				m := ChatMessage{}
-				err := DB.First(&m, "id = ?", ev.ID).Error
+				err := DB.First(&m, "event_id = ?", ev.ID).Error
 				if err != nil {
 					// Get active account for private key
 					var account Account
@@ -468,17 +517,29 @@ func processSub(sub *nostr.Subscription, relay *nostr.Relay, pubkey string) {
 
 					// Create new chat message
 
+					firstPtag := k14.Tags.GetFirst([]string{"p"})
+					if firstPtag == nil {
+						TheLog.Printf("Error getting first p tag")
+						continue
+					}
+					tagValue := firstPtag.Value()
+					if tagValue == "" || !isHex(tagValue) {
+						TheLog.Printf("skipping invalid pubkey from message: %s", tagValue)
+						continue
+					}
+
 					m = ChatMessage{
 						FromPubkey: k14.PubKey,
-						ToPubkey:   account.Pubkey,
+						ToPubkey:   tagValue,
 						Content:    k14.Content,
+						EventId:    ev.ID,
 						Timestamp:  time.Unix(int64(k14.CreatedAt), 0),
 					}
 
 					if err := DB.Create(&m).Error; err != nil {
 						TheLog.Printf("Error creating chat message: %v", err)
 					} else {
-						TheLog.Printf("Received chat message from %s, content: %s", m.FromPubkey, m.Content)
+						//TheLog.Printf("Received chat message from %s, content: %s", m.FromPubkey, m.Content)
 					}
 				}
 			}

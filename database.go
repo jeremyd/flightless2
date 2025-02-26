@@ -61,6 +61,7 @@ type RelayStatus struct {
 
 type ChatMessage struct {
 	ID         int64     `gorm:"primaryKey;autoIncrement"`
+	EventId    string    `gorm:"size:65"`
 	FromPubkey string    `gorm:"size:65"`
 	ToPubkey   string    `gorm:"size:65"`
 	Content    string    `gorm:"size:65535"`
