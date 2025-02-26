@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jeremyd/crusher17"
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/nbd-wtf/go-nostr/nip19"
 	"gorm.io/gorm"
@@ -117,6 +118,13 @@ func doRelay(db *gorm.DB, ctx context.Context, url string) bool {
 			Limit:   1,
 			Authors: []string{pubkey},
 		},
+		{
+			Kinds: []int{1059},
+			Limit: 10,
+			Tags: nostr.TagMap{
+				"p": []string{pubkey},
+			},
+		},
 	}
 
 	// create a subscription and submit to relay
@@ -133,7 +141,7 @@ func doRelay(db *gorm.DB, ctx context.Context, url string) bool {
 
 	// Pick up where we left off for this relay based on last EOSE timestamp
 	var rs RelayStatus
-	db.Where("url = ? and metadata_pubkey = ?", url, pubkey).First(&rs)
+	db.Where("url = ?", url).First(&rs)
 
 	sinceDisco := rs.LastDisco
 	if sinceDisco.IsZero() {
@@ -297,15 +305,26 @@ func processSub(sub *nostr.Subscription, relay *nostr.Relay, pubkey string) {
 				allRelayTags := ev.Tags.GetAll(relayTags)
 				for _, relayTag := range allRelayTags {
 					r := DMRelay{}
-					err := DB.Find(&r, "pubkey_hex = ? and url = ?", ev.PubKey, relayTag[1])
+					// First check if this relay URL exists for this pubkey
+					var existingRelay DMRelay
+					err := DB.Where("pubkey_hex = ? AND url = ?", ev.PubKey, relayTag[1]).First(&existingRelay).Error
 					if err != nil {
+						// URL doesn't exist, create new entry
 						r = DMRelay{
 							PubkeyHex: ev.PubKey,
 							Url:       relayTag[1],
+							CreatedAt: time.Now(),
+							UpdatedAt: time.Now(),
 						}
 						DB.Create(&r)
 					}
 				}
+				// Remove URLs that are no longer in the tags
+				var existingUrls []string
+				for _, tag := range allRelayTags {
+					existingUrls = append(existingUrls, tag[1])
+				}
+				DB.Where("pubkey_hex = ? AND url NOT IN ?", ev.PubKey, existingUrls).Delete(&DMRelay{})
 			} else if ev.Kind == 3 {
 
 				// Contact List
@@ -350,6 +369,11 @@ func processSub(sub *nostr.Subscription, relay *nostr.Relay, pubkey string) {
 					}
 				}
 
+				// Add follows
+				for _, followPerson := range person.Follows {
+					DB.Exec("INSERT OR IGNORE INTO metadata_follows (metadata_pubkey_hex, follow_pubkey_hex) VALUES (?, ?)", person.PubkeyHex, followPerson.PubkeyHex)
+				}
+
 				for _, c := range allPTags {
 					// if the pubkey fails the sanitization (is a hex value) skip it
 
@@ -378,10 +402,53 @@ func processSub(sub *nostr.Subscription, relay *nostr.Relay, pubkey string) {
 							TheLog.Println("Error creating user for follow: ", createNewErr)
 						}
 						// use gorm insert statement to update the join table
-						DB.Exec("insert or ignore into metadata_follows (metadata_pubkey_hex, follow_pubkey_hex) values (?, ?)", person.PubkeyHex, newUser.PubkeyHex)
+						DB.Exec("INSERT OR IGNORE INTO metadata_follows (metadata_pubkey_hex, follow_pubkey_hex) VALUES (?, ?)", person.PubkeyHex, newUser.PubkeyHex)
 					} else {
 						// use gorm insert statement to update the join table
-						DB.Exec("insert or ignore into metadata_follows (metadata_pubkey_hex, follow_pubkey_hex) values (?, ?)", person.PubkeyHex, followPerson.PubkeyHex)
+						DB.Exec("INSERT OR IGNORE INTO metadata_follows (metadata_pubkey_hex, follow_pubkey_hex) VALUES (?, ?)", person.PubkeyHex, followPerson.PubkeyHex)
+					}
+				}
+			} else if ev.Kind == 1059 {
+				// Message
+				TheLog.Printf("Received message event: %v", ev)
+				m := ChatMessage{}
+				err := DB.First(&m, "id = ?", ev.ID).Error
+				if err != nil {
+					// Get active account for private key
+					var account Account
+					DB.Where("active = ?", true).First(&account)
+
+					// Convert event back to JSON string
+
+					// Decrypt the message using crusher17
+					sk := Decrypt(string(Password), account.Privatekey)
+
+					decryptedContent, err := crusher17.ReceiveEvent(sk, ev)
+					if err != nil {
+						TheLog.Printf("Error decrypting message: %v", err)
+						continue
+					}
+
+					var k14 nostr.Event
+					err2 := json.Unmarshal([]byte(decryptedContent), &k14)
+					if err2 != nil {
+						TheLog.Printf("Error unmarshalling k14 event: %v", err2)
+						continue
+					}
+
+					// Create new chat message
+
+					m = ChatMessage{
+						FromPubkey: k14.PubKey,
+						ToPubkey:   account.Pubkey,
+						Content:    k14.Content,
+						Timestamp:  time.Unix(int64(k14.CreatedAt), 0),
+					}
+
+					if err := DB.Create(&m).Error; err != nil {
+						TheLog.Printf("Error creating chat message: %v", err)
+					} else {
+						TheLog.Printf("Received chat message from %s, content: %s", m.FromPubkey, m.Content)
 					}
 				}
 			}

@@ -55,6 +55,7 @@ func main() {
 			//"wss://nostr-dev.wellorder.net",
 			//"wss://relay.nostr.info",
 			"wss://profiles.nostr1.com",
+			"wss://nostr21.com",
 		}
 	} else {
 		for _, relayStatus := range relayStatuses {

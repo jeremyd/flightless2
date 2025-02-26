@@ -30,14 +30,17 @@ func layout(g *gocui.Gui) error {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
-		//myTitle := fmt.Sprintf("%-30s %-30s \n", "Name", "Nip05")
-		//v.Title = "Profiles"
 		v.Wrap = false
 		v.Autoscroll = false
 		v.BgColor = useBg
 		v.FgColor = useFg
 		v.FrameColor = useFrame
 		v.Editable = false
+		v.Highlight = true
+		v.SelBgColor = gocui.ColorCyan
+		v.SelFgColor = gocui.ColorBlack
+
+		refreshV2Conversations(g, v)
 		g.SetCurrentView("v2")
 	}
 
@@ -77,26 +80,21 @@ func layout(g *gocui.Gui) error {
 		v.BgColor = useBg
 		v.FgColor = useFg
 		v.FrameColor = useFrame
+		v.Clear()
+		NoticeColor := "\033[1;36m%s\033[0m"
+		s := fmt.Sprintf("(%s)earch", fmt.Sprintf(NoticeColor, "S"))
+		q := fmt.Sprintf("(%s)uit", fmt.Sprintf(NoticeColor, "Q"))
+		f := fmt.Sprintf("(%s)efresh", fmt.Sprintf(NoticeColor, "R"))
+		t := fmt.Sprintf("(%s)next window", fmt.Sprintf(NoticeColor, "TAB"))
+		a := fmt.Sprintf("(%s)dd relay", fmt.Sprintf(NoticeColor, "A"))
+
+		fmt.Fprintf(v, "%-30s%-30s%-30s%-30s%-30s\n", s, q, f, t, a)
+		z := fmt.Sprintf("(%s)Select ALL", fmt.Sprintf(NoticeColor, "Z"))
+		d := fmt.Sprintf("(%s)elete relay", fmt.Sprintf(NoticeColor, "D"))
+		c := fmt.Sprintf("(%s)onfigure keys", fmt.Sprintf(NoticeColor, "C"))
+		fmt.Fprintf(v, "%-30s%-30s%-30s\n\n", z, d, c)
 
 	}
-
-	v5, _ := g.View("v5")
-	v5.Clear()
-	NoticeColor := "\033[1;36m%s\033[0m"
-	s := fmt.Sprintf("(%s)earch", fmt.Sprintf(NoticeColor, "s"))
-	q := fmt.Sprintf("(%s)uit", fmt.Sprintf(NoticeColor, "q"))
-	f := fmt.Sprintf("(%s)efresh", fmt.Sprintf(NoticeColor, "r"))
-	t := fmt.Sprintf("(%s)next window", fmt.Sprintf(NoticeColor, "tab"))
-	a := fmt.Sprintf("(%s)dd relay", fmt.Sprintf(NoticeColor, "a"))
-
-	fmt.Fprintf(v5, "%-30s%-30s%-30s%-30s%-30s\n", s, q, f, t, a)
-	z := fmt.Sprintf("(%s)Select ALL", fmt.Sprintf(NoticeColor, "z"))
-	d := fmt.Sprintf("(%s)elete relay", fmt.Sprintf(NoticeColor, "d"))
-	c := fmt.Sprintf("(%s)onfigure keys", fmt.Sprintf(NoticeColor, "c"))
-	fmt.Fprintf(v5, "%-30s%-30s%-30s\n\n", z, d, c)
-
-	refresh(g)
-	refreshV2(g, v5)
 
 	return nil
 }

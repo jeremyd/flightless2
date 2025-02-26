@@ -11,10 +11,11 @@ import (
 )
 
 type Account struct {
-	Pubkey     string `gorm:"primaryKey;size:65"`
-	PubkeyNpub string `gorm:"size:65"`
-	Privatekey string `gorm:"size:1024"` // encrypted
-	Active     bool
+	Pubkey       string `gorm:"primaryKey;size:65"`
+	PubkeyNpub   string `gorm:"size:65"`
+	Privatekey   string `gorm:"size:1024"` // encrypted
+	Active       bool
+	ChatMessages []ChatMessage `gorm:"foreignKey:ToPubkey;references:Pubkey"`
 }
 
 type Login struct {
@@ -56,6 +57,14 @@ type RelayStatus struct {
 	// change these defaults to something closer to zero
 	LastEOSE  time.Time `gorm:"default:CURRENT_TIMESTAMP"`
 	LastDisco time.Time `gorm:"default:CURRENT_TIMESTAMP"`
+}
+
+type ChatMessage struct {
+	ID         int64     `gorm:"primaryKey;autoIncrement"`
+	FromPubkey string    `gorm:"size:65"`
+	ToPubkey   string    `gorm:"size:65"`
+	Content    string    `gorm:"size:65535"`
+	Timestamp  time.Time `gorm:"autoUpdateTime"`
 }
 
 func GetGormConnection() *gorm.DB {
@@ -106,5 +115,8 @@ func RunMigrations() {
 	}
 	if err := DB.AutoMigrate(&RelayStatus{}); err != nil {
 		log.Fatalf("Failed to migrate RelayStatus table: %v", err)
+	}
+	if err := DB.AutoMigrate(&ChatMessage{}); err != nil {
+		log.Fatalf("Failed to migrate ChatMessage table: %v", err)
 	}
 }

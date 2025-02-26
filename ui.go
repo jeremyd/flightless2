@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"syscall"
 
 	"github.com/awesome-gocui/gocui"
@@ -18,8 +19,6 @@ var searchTerm = ""
 var followSearch = false
 var CurrOffset = 0
 var followPages []Metadata
-var followTarget Metadata
-var highlighted []string
 
 func quit(g *gocui.Gui, v *gocui.View) error {
 	p, err := os.FindProcess(os.Getpid())
@@ -103,12 +102,14 @@ func search(g *gocui.Gui, v *gocui.View) error {
 		if !errors.Is(err, gocui.ErrUnknownView) {
 			return err
 		}
-		if _, err := g.SetCurrentView("msg"); err != nil {
-			return err
-		}
 		v.Title = "Search"
 		v.Editable = true
 		v.KeybindOnEdit = true
+		v.Clear()
+
+		if _, err := g.SetCurrentView("msg"); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -116,56 +117,69 @@ func search(g *gocui.Gui, v *gocui.View) error {
 func doSearch(g *gocui.Gui, v *gocui.View) error {
 	followSearch = false
 	// zero out the highlighted list
-	highlighted = []string{}
 	CurrOffset = 0
 	msg, eM := g.View("msg")
 	if eM != nil {
 		return nil
 	}
-	searchTerm = "%" + msg.Buffer() + "%"
-	g.DeleteView("msg")
-	g.SetCurrentView("v2")
+	searchTerm = "%" + strings.TrimSpace(msg.Buffer()) + "%"
+	if searchTerm == "%%" {
+		searchTerm = ""
+	}
+	if err := g.DeleteView("msg"); err != nil {
+		return err
+	}
+	if _, err := g.SetCurrentView("v2"); err != nil {
+		return err
+	}
 	refreshV2(g, v)
-	//refreshV3(g, v)
+	refreshV4(g, 0)
 	return nil
 }
 
 func cursorDownV2(g *gocui.Gui, v *gocui.View) error {
 	if v != nil {
-
 		cx, cy := v.Cursor()
+		TheLog.Println("cursor down v2 cx", cx, "cy", cy)
 		_, vSizeY := v.Size()
 
-		if followSearch && (cy+CurrOffset+1) >= len(followPages) {
-			// end of list
+		// Check if we're at the end of the list
+		totalItems := len(v2Meta)
+		if followSearch {
+			totalItems = len(followPages)
+		}
+
+		if (cy + CurrOffset + 1) >= totalItems {
+			TheLog.Println("cursor down woooot")
 			return nil
 		}
 
-		if !followSearch && len(v2Meta) != vSizeY-1 && (cy+1) >= len(v2Meta) {
-			// end of list
-			return nil
-		}
+		// Clear current highlight
+		v.SetHighlight(cy, false)
 
+		// If we're at the bottom of the view, move to next page
 		if (cy + 1) >= (vSizeY - 1) {
-			// end of page / next page
+			TheLog.Println("cursor down v2: at bottom move to next page")
 			if err := v.SetCursor(0, 0); err != nil {
 				if err := v.SetOrigin(0, 0); err != nil {
 					return err
 				}
 			}
 			CurrOffset += (vSizeY - 1)
-			refreshV2(g, v)
-			//refreshV3(g, v)
+			refreshV2Conversations(g, v)
+			v.SetHighlight(0, true)
 			return nil
 		}
 
+		// Move cursor down one line
 		if err := v.SetCursor(cx, cy+1); err != nil {
 			ox, oy := v.Origin()
 			if err := v.SetOrigin(ox, oy+1); err != nil {
 				return err
 			}
 		}
-		//refreshV3(g, v)
+		v.SetHighlight(cy+1, true)
+		refreshV4(g, cy+1)
 	}
 	return nil
 }
@@ -174,33 +188,45 @@ func cursorUpV2(g *gocui.Gui, v *gocui.View) error {
 	if v != nil {
 		cx, cy := v.Cursor()
 		_, vSizeY := v.Size()
+
+		// Check if we're at the top
 		if cy == 0 && CurrOffset == 0 {
 			return nil
 		}
-		// page up
+
+		// Clear current highlight
+		v.SetHighlight(cy, false)
+
+		// If we're at the top of the view and there are more items above
 		if cy == 0 {
+			newOffset := 0
 			if CurrOffset >= (vSizeY - 1) {
-				CurrOffset -= (vSizeY - 1)
-			} else {
-				CurrOffset = 0
+				newOffset = CurrOffset - (vSizeY - 1)
 			}
-			refresh(g)
-			ox, oy := v.Origin()
-			if err := v.SetCursor(cx, vSizeY-2); err != nil && oy > 0 {
+			CurrOffset = newOffset
+			refreshV2Conversations(g, v)
+
+			// Move cursor to bottom of view unless we're at the start
+			newY := vSizeY - 2
+			if err := v.SetCursor(cx, newY); err != nil {
+				ox, oy := v.Origin()
 				if err := v.SetOrigin(ox, oy-1); err != nil {
 					return err
 				}
 			}
-			// just up
-		} else {
+			v.SetHighlight(newY, true)
+			return nil
+		}
+
+		// Move cursor up one line
+		if err := v.SetCursor(cx, cy-1); err != nil {
 			ox, oy := v.Origin()
-			if err := v.SetCursor(cx, cy-1); err != nil && oy > 0 {
-				if err := v.SetOrigin(ox, oy-1); err != nil {
-					return err
-				}
+			if err := v.SetOrigin(ox, oy-1); err != nil {
+				return err
 			}
 		}
-		//refreshV3(g, v)
+		v.SetHighlight(cy-1, true)
+		refreshV4(g, cy-1)
 	}
 	return nil
 }

@@ -2,27 +2,86 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/awesome-gocui/gocui"
+	"github.com/nbd-wtf/go-nostr/nip19"
 )
 
-func refresh(g *gocui.Gui) error {
+// current page?
+var displayV2Meta []Metadata
+
+func refreshV2Conversations(g *gocui.Gui, v *gocui.View) error {
 	v2, _ := g.View("v2")
-	// size of screen
-	//_, vY := v2.Size()
 	v2.Clear()
 
-	for _, x := range []string{"fren1", "fren2", "fren3"} {
-		fmt.Fprint(v2, x+"\n")
+	// get the active account pubkey
+	account := Account{}
+	DB.Where("active = ?", true).First(&account)
+	pubkey := account.Pubkey
+
+	var allMessages []ChatMessage
+	DB.Where("to_pubkey = ?", pubkey).Find(&allMessages)
+
+	// group the messages by from_pubkey
+	conversations := make(map[string][]ChatMessage)
+	for _, message := range allMessages {
+		conversations[message.FromPubkey] = append(conversations[message.FromPubkey], message)
 	}
 
-	v2.Highlight = true
-	v2.SelBgColor = gocui.ColorCyan
-	v2.SelFgColor = gocui.ColorBlack
+	// print the pubkeys we have conversations with
+	newV2meta := []Metadata{}
+	v2.Title = "Pubkeys we have conversations with:"
+	for pubkey, _ := range conversations {
+		m := Metadata{}
+		if err := DB.First(&m, "pubkey_hex = ?", pubkey).Error; err != nil {
+			TheLog.Printf("error getting metadata for pubkey: %s, %s", pubkey, err)
+			// creating db record
+			m.PubkeyHex = pubkey
+			m.PubkeyNpub, _ = nip19.EncodePublicKey(pubkey)
+			m.MetadataUpdatedAt = time.Unix(0, 0)
+			m.ContactsUpdatedAt = time.Unix(0, 0)
+			DB.Create(&m)
+		}
+		newV2meta = append(newV2meta, m)
+	}
+
+	v2Meta = newV2meta
+
+	_, vSizeY := v2.Size()
+	maxDisplay := vSizeY - 1
+
+	// Calculate the slice of metadata to display based on current offset
+	endIdx := CurrOffset + maxDisplay
+	if endIdx > len(v2Meta) {
+		endIdx = len(v2Meta)
+	}
+	displayV2Meta = v2Meta[CurrOffset:endIdx]
+
+	// Display the metadata
+	for _, metadata := range displayV2Meta {
+		if metadata.Nip05 != "" {
+			fmt.Fprintf(v2, "%-30s %-30s\n", metadata.Name, metadata.Nip05)
+		} else if metadata.Name != "" {
+			fmt.Fprintf(v2, "%-30s\n", metadata.Name)
+		} else if metadata.DisplayName != "" {
+			fmt.Fprintf(v2, "%-30s\n", metadata.DisplayName)
+		} else {
+			fmt.Fprintf(v2, "%-30s\n", metadata.PubkeyHex)
+		}
+	}
+
+	// Reset cursor to first line if needed
+	if _, cy := v2.Cursor(); cy < 0 {
+		v2.SetCursor(0, 0)
+		v2.SetHighlight(0, true)
+	}
+
 	return nil
 }
 
 func refreshV2(g *gocui.Gui, v *gocui.View) error {
+	TheLog.Println("refreshing v2")
 	v2, _ := g.View("v2")
 	v2.Clear()
 
@@ -35,14 +94,45 @@ func refreshV2(g *gocui.Gui, v *gocui.View) error {
 	m := Metadata{}
 	DB.Where("pubkey_hex = ?", pubkey).First(&m)
 
-	assocError := DB.Model(&m).Association("Follows").Find(&curFollows)
-	if assocError != nil {
-		TheLog.Printf("error getting follows for account: %s", assocError)
+	// Handle search vs normal view
+	if searchTerm != "" {
+		// Search within follows
+		DB.Model(&m).Association("Follows").Find(&curFollows, "name LIKE ? OR nip05 LIKE ?", searchTerm, searchTerm)
+		v2.Title = fmt.Sprintf("search (%s)", searchTerm)
+	} else {
+		// Get all follows
+		assocError := DB.Model(&m).Association("Follows").Find(&curFollows)
+		if assocError != nil {
+			TheLog.Printf("error getting follows for account: %s", assocError)
+		}
+		v2.Title = fmt.Sprintf("follows (%d)", len(v2Meta))
 	}
 
-	v2Meta = curFollows
+	// only display follows that have >0 DM relays
+	v2MetaFiltered := []Metadata{}
+	for _, follow := range curFollows {
+		dmRelayCount := DB.Model(&follow).Association("DMRelays").Count()
+		if dmRelayCount != 0 {
+			v2MetaFiltered = append(v2MetaFiltered, follow)
+		}
+	}
 
-	for _, metadata := range v2Meta {
+	// sort by recent ChatMessages
+
+	v2Meta = v2MetaFiltered
+
+	_, vSizeY := v2.Size()
+	maxDisplay := vSizeY - 1
+
+	// Calculate the slice of metadata to display based on current offset
+	endIdx := CurrOffset + maxDisplay
+	if endIdx > len(v2Meta) {
+		endIdx = len(v2Meta)
+	}
+	displayV2Meta = v2Meta[CurrOffset:endIdx]
+
+	// Display the metadata
+	for _, metadata := range displayV2Meta {
 		if metadata.Nip05 != "" {
 			fmt.Fprintf(v2, "%-30s %-30s\n", metadata.Name, metadata.Nip05)
 		} else {
@@ -50,29 +140,34 @@ func refreshV2(g *gocui.Gui, v *gocui.View) error {
 		}
 	}
 
-	v2.Title = fmt.Sprintf("follows (%d)", len(v2Meta))
-	v2.Highlight = true
-	v2.SelBgColor = gocui.ColorCyan
-	v2.SelFgColor = gocui.ColorBlack
-
-	v4, _ := g.View("v4")
-	v4.Clear()
-
-	var curDMRelays []DMRelay
-	assocError2 := DB.Model(&m).Association("DMRelays").Find(&curDMRelays)
-	if assocError2 != nil {
-		TheLog.Printf("error getting DM relays for account: %s", assocError2)
+	// Reset cursor to first line if needed
+	if _, cy := v2.Cursor(); cy < 0 {
+		v2.SetCursor(0, 0)
+		v2.SetHighlight(0, true)
 	}
-
-	refreshV4(g, curDMRelays)
 
 	return nil
 }
 
-func refreshV4(g *gocui.Gui, curDMRelays []DMRelay) error {
+func refreshV4(g *gocui.Gui, cursor int) error {
 	v4, _ := g.View("v4")
 	v4.Clear()
 
+	myDMRelays := []DMRelay{}
+	account := Account{}
+	DB.Where("active = ?", true).First(&account)
+	DB.Where("pubkey_hex = ?", account.Pubkey).Find(&myDMRelays)
+	fmt.Fprintf(v4, "My DM relays:\n")
+	for _, relay := range myDMRelays {
+		fmt.Fprintf(v4, "%s\n", relay.Url)
+	}
+
+	if len(displayV2Meta) == 0 || cursor >= len(displayV2Meta) {
+		return nil
+	}
+	curDMRelays := []DMRelay{}
+	DB.Where("pubkey_hex = ?", displayV2Meta[cursor].PubkeyHex).Find(&curDMRelays)
+	fmt.Fprintf(v4, "\n%s DM relays:\n", displayV2Meta[cursor].Name)
 	for _, relay := range curDMRelays {
 		fmt.Fprintf(v4, "%s\n", relay.Url)
 	}
