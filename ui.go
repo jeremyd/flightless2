@@ -625,3 +625,73 @@ func cancelAddRelay(g *gocui.Gui, v *gocui.View) error {
 	g.SetCurrentView("v2")
 	return nil
 }
+
+func cursorDownV4(g *gocui.Gui, v *gocui.View) error {
+	if v != nil {
+		cx, cy := v.Cursor()
+		//relays := []Relay{}
+		//DB.Find(&relays)
+		if cy < len(strings.Split(v.Buffer(), "\n"))-1 {
+			if err := v.SetCursor(cx, cy+1); err != nil {
+				ox, oy := v.Origin()
+				if err := v.SetOrigin(ox, oy+1); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func cursorUpV4(g *gocui.Gui, v *gocui.View) error {
+	if v != nil {
+		ox, oy := v.Origin()
+		cx, cy := v.Cursor()
+		if err := v.SetCursor(cx, cy-1); err != nil && oy > 0 {
+			if err := v.SetOrigin(ox, oy-1); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func delRelay(g *gocui.Gui, v *gocui.View) error {
+	_, cy := v.Cursor()
+	if cy < len(strings.Split(v.Buffer(), "\n"))-1 {
+		lines := strings.Split(v.Buffer(), "\n")
+		if len(lines) <= cy {
+			return nil
+		}
+
+		line := strings.TrimSpace(lines[cy])
+		if line == "" {
+			return nil
+		}
+
+		// Extract relay URL from the line
+		parts := strings.Split(line, " ")
+		if len(parts) < 2 {
+			return nil
+		}
+		relayUrl := parts[1]
+
+		// Find existing relay status
+		var status RelayStatus
+		result := DB.Where("url = ?", relayUrl).First(&status)
+		if result.Error != nil {
+			TheLog.Printf("error finding relay status: %v", result.Error)
+			return result.Error
+		}
+
+		// Update status to deleting
+		status.Status = "deleting"
+		if err := DB.Save(&status).Error; err != nil {
+			TheLog.Printf("error updating relay status: %v", err)
+			return err
+		}
+
+		TheLog.Printf("marked relay %s for deletion", relayUrl)
+	}
+	return nil
+}

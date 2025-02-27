@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/awesome-gocui/gocui"
 	"gorm.io/gorm"
@@ -82,6 +83,39 @@ func main() {
 	if err := keybindings(g); err != nil {
 		log.Panicln(err)
 	}
+
+	// relay status manager!
+	go func() {
+		for {
+			var RelayStatuses []RelayStatus
+			DB.Find(&RelayStatuses)
+			for _, relayStatus := range RelayStatuses {
+				if relayStatus.Status == "waiting" {
+					doRelay(DB, CTX, relayStatus.Url)
+				} else if relayStatus.Status == "deleting" {
+					foundit := false
+					for _, r := range nostrRelays {
+						if r.URL == relayStatus.Url {
+							err := DB.Delete(&relayStatus).Error
+							if err != nil {
+								fmt.Println(err)
+							}
+							foundit = true
+							r.Close()
+						}
+					}
+					// if we didn't find it, delete the record anyway
+					if !foundit {
+						err := DB.Delete(&relayStatus).Error
+						if err != nil {
+							fmt.Println(err)
+						}
+					}
+				}
+			}
+			time.Sleep(1 * time.Second)
+		}
+	}()
 
 	if err := g.MainLoop(); err != nil && err != gocui.ErrQuit {
 		log.Panicln(err)

@@ -112,7 +112,14 @@ func UpdateOrCreateRelayStatus(db *gorm.DB, url string, status string) {
 	var s RelayStatus
 	err := db.Model(&s).Where("url = ?", url).First(&s).Error
 	if err == nil {
-		db.Model(&r).Where("url = ?", url).Updates(&r)
+		if s.Status == "deleting" {
+			if err := db.Delete(&s); err != nil {
+				TheLog.Printf("error deleting relay status: %v\n", err)
+			}
+			return
+		} else {
+			db.Model(&r).Where("url = ?", url).Updates(&r)
+		}
 	} else {
 		db.Create(&r)
 	}
@@ -236,7 +243,7 @@ func doRelay(db *gorm.DB, ctx context.Context, url string) bool {
 		since = sinceDisco
 	}
 
-	//filterTimestamp := nostr.Timestamp(since.Unix())
+	filterTimestamp := nostr.Timestamp(since.Unix())
 
 	// BATCH filters into chunks of 1000 per filter.
 	var hop2Filters []nostr.Filter
@@ -258,7 +265,7 @@ func doRelay(db *gorm.DB, ctx context.Context, url string) bool {
 					Kinds:   []int{0, 10050},
 					Limit:   1000,
 					Authors: authorPubkeys,
-					//Since:   &filterTimestamp,
+					Since:   &filterTimestamp,
 				})
 				TheLog.Printf("adding chunk subscription for %d:%d", begin, end)
 				lastCount = counter
@@ -281,7 +288,7 @@ func doRelay(db *gorm.DB, ctx context.Context, url string) bool {
 				Kinds:   []int{0, 10050},
 				Limit:   1000,
 				Authors: authorPubkeys,
-				//Since:   &filterTimestamp,
+				Since:   &filterTimestamp,
 			})
 		}
 	} else {
@@ -293,7 +300,7 @@ func doRelay(db *gorm.DB, ctx context.Context, url string) bool {
 			Kinds:   []int{0, 10050},
 			Limit:   1000,
 			Authors: authorPubkeys,
-			//Since:   &filterTimestamp,
+			Since:   &filterTimestamp,
 		})
 	}
 
