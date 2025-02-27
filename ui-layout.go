@@ -58,6 +58,7 @@ func layout(g *gocui.Gui) error {
 		v.FgColor = uiColorFg
 		v.FrameColor = uiColorFrame
 		v.Editable = false
+		refreshV3(g, 0)
 	}
 
 	if v, err := g.SetView("v4", maxX-29, 1, maxX-1, maxY-6, 4); err != nil {
@@ -71,6 +72,7 @@ func layout(g *gocui.Gui) error {
 		v.BgColor = uiColorBg
 		v.FgColor = uiColorFg
 		v.FrameColor = uiColorFrame
+		refreshV4(g, 0)
 	}
 
 	if v, err := g.SetView("v5", 0, maxY-6, maxX-1, maxY-1, 1); err != nil {

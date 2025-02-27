@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -9,6 +11,7 @@ import (
 	"time"
 
 	"github.com/awesome-gocui/gocui"
+	"github.com/jeremyd/crusher17"
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/nbd-wtf/go-nostr/nip19"
 )
@@ -202,13 +205,10 @@ func confirmPostInput(g *gocui.Gui, v *gocui.View) error {
 }
 
 func postInput(g *gocui.Gui, v *gocui.View) error {
-
 	msg := strings.TrimSpace(v.Buffer())
 	if msg == "" {
 		return nil
 	}
-
-	TheLog.Printf("would have posting message: %s\n", msg)
 
 	v2, err := g.View("v2")
 	if err != nil {
@@ -222,17 +222,144 @@ func postInput(g *gocui.Gui, v *gocui.View) error {
 	m := displayV2Meta[cy]
 	TheLog.Printf("posted to pubkey of %s", m.PubkeyHex)
 
+	// Get active account
 	account := Account{}
 	DB.Where("active = ?", true).First(&account)
+
+	// Create and store chat message in local DB
 	DB.Create(&ChatMessage{FromPubkey: account.Pubkey, ToPubkey: m.PubkeyHex, Content: msg})
 
-	cancelInput(g, v)
-	refreshV3(g, cy)
+	// Create and publish nostr event
+	if account.Privatekey != "" {
+		// Decrypt private key
+		decryptedKey := Decrypt(string(Password), account.Privatekey)
 
-	// TODO: Implement actual message sending here
-	// You'll need to implement the nostr message sending logic
+		// Get sender's metadata and DM relays
+		var senderMeta Metadata
+		DB.Preload("DMRelays").Where("pubkey_hex = ?", account.Pubkey).First(&senderMeta)
 
-	// Clear and close input view
+		// Get recipient's metadata and DM relays
+		var recipientMeta Metadata
+		DB.Preload("DMRelays").Where("pubkey_hex = ?", m.PubkeyHex).First(&recipientMeta)
+
+		// Collect all unique relays from both sender and receiver
+		uniqueRelays := make(map[string]string) // map[url]relay_for_pubkey
+		for _, relay := range senderMeta.DMRelays {
+			uniqueRelays[relay.Url] = account.Pubkey
+		}
+		for _, relay := range recipientMeta.DMRelays {
+			uniqueRelays[relay.Url] = m.PubkeyHex
+		}
+
+		// If no DM relays are set, use all connected relays
+		if len(uniqueRelays) == 0 {
+			for _, relay := range nostrRelays {
+				if relay != nil {
+					uniqueRelays[relay.URL] = account.Pubkey
+				}
+			}
+		}
+
+		if len(uniqueRelays) == 0 {
+			TheLog.Printf("No relays available for sending message")
+			return nil
+		}
+
+		// Convert unique relays to slice and use first relay as primary
+		targetRelays := make([]string, 0, len(uniqueRelays))
+		var primaryRelay string
+		for url := range uniqueRelays {
+			if primaryRelay == "" {
+				primaryRelay = url
+			}
+			targetRelays = append(targetRelays, url)
+		}
+
+		// Create a GiftWrapEvent
+		giftWrap := crusher17.GiftWrapEvent{
+			SenderSecretKey: decryptedKey,
+			SenderRelay:     primaryRelay,
+			CreatedAt:       nostr.Now(),
+			ReceiverPubkeys: map[string]string{
+				m.PubkeyHex: primaryRelay,
+			},
+			Content:   msg,
+			GiftWraps: make(map[string]string),
+		}
+
+		// Wrap the message
+		err = giftWrap.Wrap()
+		if err != nil {
+			TheLog.Printf("Error wrapping message: %v", err)
+			return err
+		}
+
+		// Connect to and publish to all unique relays
+		ctx := context.Background()
+		for _, relayUrl := range targetRelays {
+			// Check if we're already connected
+			var isConnected bool
+			for _, existingRelay := range nostrRelays {
+				if existingRelay != nil && existingRelay.URL == relayUrl {
+					// Publish both the sender's and receiver's giftwraps
+					for _, wrappedEvent := range giftWrap.GiftWraps {
+						var ev nostr.Event
+						err := json.Unmarshal([]byte(wrappedEvent), &ev)
+						if err != nil {
+							TheLog.Printf("Error unmarshaling wrapped event: %v", err)
+							continue
+						}
+						status := existingRelay.Publish(ctx, ev)
+						TheLog.Printf("Published giftwrap to existing relay %s with status: %v", relayUrl, status)
+					}
+					isConnected = true
+					break
+				}
+			}
+
+			// If not connected, connect and publish
+			if !isConnected {
+				relay, err := nostr.RelayConnect(ctx, relayUrl)
+				if err != nil {
+					TheLog.Printf("Failed to connect to relay %s: %v", relayUrl, err)
+					continue
+				}
+
+				// Handle auth if needed
+				if account.Privatekey != "" && checkRelayRequiresAuth(relayUrl) {
+					err = relay.Auth(ctx, func(evt *nostr.Event) error {
+						return evt.Sign(decryptedKey)
+					})
+					if err != nil {
+						TheLog.Printf("Failed to authenticate with relay %s: %v", relayUrl, err)
+					}
+				}
+
+				// Publish both the sender's and receiver's giftwraps
+				for _, wrappedEvent := range giftWrap.GiftWraps {
+					var ev nostr.Event
+					err := json.Unmarshal([]byte(wrappedEvent), &ev)
+					if err != nil {
+						TheLog.Printf("Error unmarshaling wrapped event: %v", err)
+						continue
+					}
+					status := relay.Publish(ctx, ev)
+					TheLog.Printf("Published giftwrap to new relay %s with status: %v", relayUrl, status)
+				}
+				// no we want to disconnect from the relay i believe?
+				//nostrRelays = append(nostrRelays, relay)
+				relay.Close()
+			}
+		}
+	}
+
+	// Clear input view
+	v.Clear()
+	v.SetCursor(0, 0)
+
+	// Close input view
+	g.DeleteView("input")
+	g.SetCurrentView("v2")
 
 	return nil
 }
@@ -265,6 +392,7 @@ func cursorDownV2(g *gocui.Gui, v *gocui.View) error {
 			CurrOffset += (vSizeY - 1)
 			refreshV2Conversations(g, v)
 			v.SetHighlight(0, true)
+			refreshV3(g, 0)
 			return nil
 		}
 
@@ -313,6 +441,7 @@ func cursorUpV2(g *gocui.Gui, v *gocui.View) error {
 				}
 			}
 			v.SetHighlight(newY, true)
+			refreshV3(g, newY)
 			return nil
 		}
 
@@ -322,6 +451,7 @@ func cursorUpV2(g *gocui.Gui, v *gocui.View) error {
 			if err := v.SetOrigin(ox, oy-1); err != nil {
 				return err
 			}
+		} else {
 		}
 		v.SetHighlight(cy-1, true)
 		refreshV3(g, cy-1)

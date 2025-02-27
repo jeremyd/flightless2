@@ -109,9 +109,11 @@ func refreshV2Conversations(g *gocui.Gui, v *gocui.View) error {
 			fmt.Fprintf(v2, "%-30s\n", metadata.PubkeyHex)
 		}
 	}
+	_, cursor := v2.Cursor()
 
 	// Reset cursor to first line if needed
-	if _, cy := v2.Cursor(); cy < 0 {
+	if cursor < 0 {
+		cursor = 0
 		v2.SetCursor(0, 0)
 		v2.SetHighlight(0, true)
 	}
