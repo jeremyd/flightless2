@@ -58,7 +58,7 @@ func refreshV2Conversations(g *gocui.Gui, v *gocui.View) error {
 
 	// print the pubkeys we have conversations with
 	newV2meta := []Metadata{}
-	v2.Title = "Pubkeys we have conversations with:"
+	v2.Title = "Pubkey navigator"
 	for pubkey, _ := range conversations {
 		m := Metadata{}
 		if err := DB.First(&m, "pubkey_hex = ?", pubkey).Error; err != nil {
@@ -73,6 +73,18 @@ func refreshV2Conversations(g *gocui.Gui, v *gocui.View) error {
 		newV2meta = append(newV2meta, m)
 	}
 
+	// sort by most recent chatMessage
+	sort.Slice(newV2meta, func(i, j int) bool {
+		conversationLatest1 := conversations[newV2meta[i].PubkeyHex]
+		sort.Slice(conversationLatest1, func(i, j int) bool {
+			return conversationLatest1[i].Timestamp.Before(conversationLatest1[j].Timestamp)
+		})
+		conversationLatest2 := conversations[newV2meta[j].PubkeyHex]
+		sort.Slice(conversationLatest2, func(i, j int) bool {
+			return conversationLatest2[i].Timestamp.Before(conversationLatest2[j].Timestamp)
+		})
+		return conversationLatest1[len(conversationLatest1)-1].Timestamp.After(conversationLatest2[len(conversationLatest2)-1].Timestamp)
+	})
 	v2Meta = newV2meta
 
 	_, vSizeY := v2.Size()
@@ -177,15 +189,19 @@ func refreshV2(g *gocui.Gui, v *gocui.View) error {
 	// Handle search vs normal view
 	if searchTerm != "" {
 		// Search within follows
-		DB.Model(&m).Association("Follows").Find(&curFollows, "name LIKE ? OR nip05 LIKE ?", searchTerm, searchTerm)
-		v2.Title = fmt.Sprintf("search (%s)", searchTerm)
+		if err := DB.Model(&m).Association("Follows").Find(&curFollows, "name LIKE ? OR nip05 LIKE ?", searchTerm, searchTerm); err != nil {
+			TheLog.Printf("error searching follows: %s", err)
+			return nil
+		}
+		v2.Title = fmt.Sprintf("follows search: %s (%d)", searchTerm, len(curFollows))
 	} else {
 		// Get all follows
 		assocError := DB.Model(&m).Association("Follows").Find(&curFollows)
 		if assocError != nil {
 			TheLog.Printf("error getting follows for account: %s", assocError)
+			return nil
 		}
-		v2.Title = fmt.Sprintf("follows (%d)", len(v2Meta))
+		v2.Title = fmt.Sprintf("all follows (%d)", len(curFollows))
 	}
 
 	// only display follows that have >0 DM relays
@@ -268,6 +284,23 @@ func refreshV4(g *gocui.Gui, cursor int) error {
 		}
 		fmt.Fprintf(v4, "%s %s\n", shortStatus, relayStatus.Url)
 	}
+
+	return nil
+}
+
+func refreshV5(g *gocui.Gui, cursor int) error {
+	v5, _ := g.View("v5")
+
+	v5.Clear()
+	v5.Title = fmt.Sprintf("TYPING TO %s:", displayV2Meta[cursor].Name)
+	v5.Editable = true
+	v5.Subtitle = "press (ENTER) twice -or- (TAB) to post - (ESC) to cancel"
+	v5.FgColor = gocui.NewRGBColor(255, 255, 255)
+	v5.BgColor = gocui.NewRGBColor(0, 0, 0)
+	g.DeleteKeybinding("v5", gocui.KeyEnter, gocui.ModNone)
+	v5.Editor = &messageEditor{gui: g}
+	g.Cursor = true
+	g.SetCurrentView("v5")
 
 	return nil
 }

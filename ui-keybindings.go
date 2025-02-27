@@ -35,11 +35,29 @@ func keybindings(g *gocui.Gui) error {
 	if err := g.SetKeybinding("v2", gocui.KeyArrowUp, gocui.ModNone, cursorUpV2); err != nil {
 		log.Panicln(err)
 	}
+	// cursor vim
+	// j key is down rune
+	if err := g.SetKeybinding("v2", rune(0x6a), gocui.ModNone, cursorDownV2); err != nil {
+		log.Panicln(err)
+	}
+	// k key is up
+	if err := g.SetKeybinding("v2", rune(0x6b), gocui.ModNone, cursorUpV2); err != nil {
+		log.Panicln(err)
+	}
 
 	/* addrelay view */
 	if err := g.SetKeybinding("v2", rune(0x61), gocui.ModNone, addRelay); err != nil {
 		log.Panicln(err)
 	}
+
+	/* enter key */
+	if err := g.SetKeybinding("v2", gocui.KeyEnter, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		_, cy := v.Cursor()
+		return askExpand(g, cy)
+	}); err != nil {
+		log.Panicln(err)
+	}
+
 	// add relay
 	if err := g.SetKeybinding("addrelay", gocui.KeyEnter, gocui.ModNone, doAddRelay); err != nil {
 		log.Panicln(err)
@@ -106,6 +124,17 @@ func keybindings(g *gocui.Gui) error {
 
 	//cancel key
 	if err := g.SetKeybinding("configshow", gocui.KeyEsc, gocui.ModNone, cancelConfigShow); err != nil {
+		log.Panicln(err)
+	}
+
+	/* posting view */
+	//cancel key
+	if err := g.SetKeybinding("v5", gocui.KeyEsc, gocui.ModNone, cancelInput); err != nil {
+		log.Panicln(err)
+	}
+
+	// tab key
+	if err := g.SetKeybinding("v5", gocui.KeyTab, gocui.ModNone, confirmPostInput); err != nil {
 		log.Panicln(err)
 	}
 

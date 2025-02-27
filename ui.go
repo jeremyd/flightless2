@@ -20,6 +20,27 @@ var searchTerm = ""
 var followSearch = false
 var CurrOffset = 0
 var followPages []Metadata
+var enterTwice = 0
+
+// Custom editor to handle shift+enter in editable views
+type messageEditor struct {
+	gui *gocui.Gui
+}
+
+func (e *messageEditor) Edit(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifier) {
+	TheLog.Printf("messageEditor Edit key: %v (type: %T), ch: %v (decimal: %d) (type: %T), mod: %v\n",
+		key, key, ch, ch, ch, mod)
+	if key == gocui.KeyEnter {
+		enterTwice++
+	} else {
+		enterTwice = 0
+	}
+	if enterTwice >= 2 {
+		confirmPostInput(e.gui, v)
+		return
+	}
+	gocui.DefaultEditor.Edit(v, key, ch, mod)
+}
 
 func quit(g *gocui.Gui, v *gocui.View) error {
 	p, err := os.FindProcess(os.Getpid())
@@ -134,7 +155,85 @@ func doSearch(g *gocui.Gui, v *gocui.View) error {
 		return err
 	}
 	refreshV2(g, v)
+	refreshV3(g, 0)
 	refreshV4(g, 0)
+	return nil
+}
+
+func askExpand(g *gocui.Gui, cursor int) error {
+	refreshV5(g, cursor)
+	return nil
+}
+
+func cancelInput(g *gocui.Gui, v *gocui.View) error {
+	// set v5 back to keybinds content
+	v5, _ := g.View("v5")
+	v5.Title = "Keybinds"
+	v5.Subtitle = ""
+	v5.Editable = false
+	v5.Frame = true
+	v5.BgColor = uiColorBg
+	v5.FgColor = uiColorFg
+	v5.Clear()
+	NoticeColor := "\033[1;36m%s\033[0m"
+	s := fmt.Sprintf("(%s)earch", fmt.Sprintf(NoticeColor, "S"))
+	q := fmt.Sprintf("(%s)uit", fmt.Sprintf(NoticeColor, "Q"))
+	f := fmt.Sprintf("(%s)efresh", fmt.Sprintf(NoticeColor, "R"))
+	t := fmt.Sprintf("(%s)next window", fmt.Sprintf(NoticeColor, "TAB"))
+	a := fmt.Sprintf("(%s)dd relay", fmt.Sprintf(NoticeColor, "A"))
+
+	fmt.Fprintf(v5, "%-30s%-30s%-30s%-30s%-30s\n", s, q, f, t, a)
+	z := fmt.Sprintf("(%s)Select ALL", fmt.Sprintf(NoticeColor, "Z"))
+	d := fmt.Sprintf("(%s)elete relay", fmt.Sprintf(NoticeColor, "D"))
+	c := fmt.Sprintf("(%s)onfigure keys", fmt.Sprintf(NoticeColor, "C"))
+	fmt.Fprintf(v5, "%-30s%-30s%-30s\n\n", z, d, c)
+
+	g.DeleteKeybinding("v5", gocui.KeyEnter, gocui.ModNone)
+	g.SetCurrentView("v2")
+	return nil
+}
+
+func confirmPostInput(g *gocui.Gui, v *gocui.View) error {
+	v.Title = "Confirm Post? ENTER to post / ESC to cancel"
+	v.BgColor = uiColorBg
+	v.Editable = false
+	g.SetKeybinding("v5", gocui.KeyEnter, gocui.ModNone, postInput)
+	return nil
+}
+
+func postInput(g *gocui.Gui, v *gocui.View) error {
+
+	msg := strings.TrimSpace(v.Buffer())
+	if msg == "" {
+		return nil
+	}
+
+	TheLog.Printf("would have posting message: %s\n", msg)
+
+	v2, err := g.View("v2")
+	if err != nil {
+		return err
+	}
+	_, cy := v2.Cursor()
+	if cy >= len(displayV2Meta) {
+		return nil
+	}
+
+	m := displayV2Meta[cy]
+	TheLog.Printf("posted to pubkey of %s", m.PubkeyHex)
+
+	account := Account{}
+	DB.Where("active = ?", true).First(&account)
+	DB.Create(&ChatMessage{FromPubkey: account.Pubkey, ToPubkey: m.PubkeyHex, Content: msg})
+
+	cancelInput(g, v)
+	refreshV3(g, cy)
+
+	// TODO: Implement actual message sending here
+	// You'll need to implement the nostr message sending logic
+
+	// Clear and close input view
+
 	return nil
 }
 

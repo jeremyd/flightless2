@@ -7,12 +7,15 @@ import (
 	tcell "github.com/gdamore/tcell/v2"
 )
 
+var (
+	uiColorBg    = gocui.NewRGBColor(0, 0, 200)
+	uiColorFg    = gocui.Attribute(tcell.ColorWhite)
+	uiColorFrame = gocui.NewRGBColor(200, 200, 200)
+)
+
 func layout(g *gocui.Gui) error {
 	//useBg := gocui.Attribute(tcell.ColorSlateBlue)
 
-	useBg := gocui.NewRGBColor(0, 0, 200)
-	useFg := gocui.Attribute(tcell.ColorWhite)
-	useFrame := gocui.NewRGBColor(200, 200, 200)
 	maxX, maxY := g.Size()
 	if v, err := g.SetView("v1", -1, -1, maxX, 1, 0); err != nil {
 		if err != gocui.ErrUnknownView {
@@ -21,20 +24,20 @@ func layout(g *gocui.Gui) error {
 		v.Editable = false
 		v.Wrap = false
 		v.Frame = false
-		v.BgColor = useBg
-		v.FgColor = useFg
+		v.BgColor = uiColorBg
+		v.FgColor = uiColorFg
 		fmt.Fprint(v, AppInfo)
 	}
 
-	if v, err := g.SetView("v2", 0, 1, maxX-20, maxY-20, 0); err != nil {
+	if v, err := g.SetView("v2", 0, 1, maxX-20, 10, 0); err != nil {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
 		v.Wrap = false
 		v.Autoscroll = false
-		v.BgColor = useBg
-		v.FgColor = useFg
-		v.FrameColor = useFrame
+		v.BgColor = uiColorBg
+		v.FgColor = uiColorFg
+		v.FrameColor = uiColorFrame
 		v.Editable = false
 		v.Highlight = true
 		v.SelBgColor = gocui.ColorCyan
@@ -44,16 +47,16 @@ func layout(g *gocui.Gui) error {
 		g.SetCurrentView("v2")
 	}
 
-	if v, err := g.SetView("v3", 0, maxY-21, maxX-20, maxY-6, 1); err != nil {
+	if v, err := g.SetView("v3", 0, 10, maxX-20, maxY-6, 1); err != nil {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
-		v.Title = "Compose"
+		v.Title = "Conversation"
 		v.Wrap = false
 		v.Autoscroll = true
-		v.BgColor = useBg
-		v.FgColor = useFg
-		v.FrameColor = useFrame
+		v.BgColor = uiColorBg
+		v.FgColor = uiColorFg
+		v.FrameColor = uiColorFrame
 		v.Editable = false
 	}
 
@@ -65,9 +68,9 @@ func layout(g *gocui.Gui) error {
 		v.Editable = false
 		v.Wrap = false
 		v.Autoscroll = true
-		v.BgColor = useBg
-		v.FgColor = useFg
-		v.FrameColor = useFrame
+		v.BgColor = uiColorBg
+		v.FgColor = uiColorFg
+		v.FrameColor = uiColorFrame
 	}
 
 	if v, err := g.SetView("v5", 0, maxY-6, maxX-1, maxY-1, 1); err != nil {
@@ -77,9 +80,9 @@ func layout(g *gocui.Gui) error {
 		v.Title = "Keybinds"
 		v.Editable = false
 		v.Frame = true
-		v.BgColor = useBg
-		v.FgColor = useFg
-		v.FrameColor = useFrame
+		v.BgColor = uiColorBg
+		v.FgColor = uiColorFg
+		v.FrameColor = uiColorFrame
 		v.Clear()
 		NoticeColor := "\033[1;36m%s\033[0m"
 		s := fmt.Sprintf("(%s)earch", fmt.Sprintf(NoticeColor, "S"))

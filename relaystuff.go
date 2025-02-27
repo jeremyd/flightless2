@@ -497,8 +497,6 @@ func processSub(sub *nostr.Subscription, relay *nostr.Relay, pubkey string) {
 					var account Account
 					DB.Where("active = ?", true).First(&account)
 
-					// Convert event back to JSON string
-
 					// Decrypt the message using crusher17
 					sk := Decrypt(string(Password), account.Privatekey)
 
