@@ -143,8 +143,6 @@ func refreshV3(g *gocui.Gui, cy int) error {
 		sort.Slice(allMessages, func(i, j int) bool {
 			return allMessages[i].Timestamp.Before(allMessages[j].Timestamp)
 		})
-		TheLog.Printf("refreshing v3 with %d messages to me", len(toMe))
-		TheLog.Printf("refreshing v3 with %d messages from me", len(fromMe))
 
 		width, _ := v3.Size()
 		// Account for borders and some padding

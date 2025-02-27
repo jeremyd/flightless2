@@ -58,6 +58,33 @@ func keybindings(g *gocui.Gui) error {
 		log.Panicln(err)
 	}
 
+	/* v4 View (relays) */
+	/* v4 View (Relay List) */
+	// d key (delete)
+	if err := g.SetKeybinding("v4", rune(0x64), gocui.ModNone, delRelay); err != nil {
+		log.Panicln(err)
+	}
+	// cursor
+	if err := g.SetKeybinding("v4", gocui.KeyArrowDown, gocui.ModNone, cursorDownV4); err != nil {
+		log.Panicln(err)
+	}
+	if err := g.SetKeybinding("v4", gocui.KeyArrowUp, gocui.ModNone, cursorUpV4); err != nil {
+		log.Panicln(err)
+	}
+	// vim cursor
+	// j key (down)
+	if err := g.SetKeybinding("v4", rune(0x6a), gocui.ModNone, cursorDownV4); err != nil {
+		log.Panicln(err)
+	}
+	// k key (up)
+	if err := g.SetKeybinding("v4", rune(0x6b), gocui.ModNone, cursorUpV4); err != nil {
+		log.Panicln(err)
+	}
+	// a key (add new relay)
+	if err := g.SetKeybinding("v4", rune(0x61), gocui.ModNone, addRelay); err != nil {
+		log.Panicln(err)
+	}
+
 	// add relay
 	if err := g.SetKeybinding("addrelay", gocui.KeyEnter, gocui.ModNone, doAddRelay); err != nil {
 		log.Panicln(err)
