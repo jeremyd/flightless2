@@ -125,6 +125,101 @@ func UpdateOrCreateRelayStatus(db *gorm.DB, url string, status string) {
 	}
 }
 
+func doDMRelays(db *gorm.DB, ctx context.Context) {
+	var account Account
+	db.Where("active = ?", true).First(&account)
+	if account.Pubkey == "" {
+		TheLog.Println("no active pubkey, skipping relay")
+		return
+	}
+	pubkey := account.Pubkey
+	var dmRelays []DMRelay
+	dmFilters := []nostr.Filter{
+		{
+			Kinds:   []int{0},
+			Limit:   1,
+			Authors: []string{pubkey},
+		},
+		{
+			Kinds:   []int{3},
+			Limit:   1,
+			Authors: []string{pubkey},
+		},
+		{
+			Kinds:   []int{10050},
+			Limit:   1,
+			Authors: []string{pubkey},
+		},
+		{
+			Kinds: []int{1059},
+			Limit: 1000,
+			Tags:  nostr.TagMap{"p": []string{pubkey}},
+		},
+	}
+	db.Where("pubkey_hex = ?", pubkey).Find(&dmRelays)
+	for _, dmr := range dmRelays {
+		TheLog.Printf("Connecting to DM relay: %s\n", dmr.Url)
+
+		// check if connection already established
+		var relay *nostr.Relay
+		for _, r := range nostrRelays {
+			if r.URL == dmr.Url {
+				relay = r
+			}
+		}
+
+		if relay != nil {
+			TheLog.Printf("connection already established to relay: %s\n", dmr.Url)
+			if sub, err := relay.Subscribe(ctx, dmFilters); err != nil {
+				TheLog.Printf("failed to subscribe to relay: %s, %v\n", dmr.Url, err)
+			} else {
+				TheLog.Printf("subscribed to dm feed from relay: %s for pubkey: %s\n", dmr.Url, pubkey)
+				nostrSubs = append(nostrSubs, sub)
+				go func() {
+					processSub(sub, relay, pubkey)
+				}()
+			}
+		}
+
+		// Connect with auth support
+		relay, err := nostr.RelayConnect(ctx, dmr.Url)
+		if err != nil {
+			TheLog.Printf("failed initial connection to relay: %s, %s; skipping relay", dmr.Url, err)
+			UpdateOrCreateRelayStatus(db, dmr.Url, "failed initial connection")
+			return
+		}
+
+		nostrRelays = append(nostrRelays, relay)
+
+		// Check if relay requires auth via NIP-11
+		if account.Privatekey != "" && checkRelayRequiresAuth(dmr.Url) {
+			// Decrypt the private key using the global Password
+			decryptedKey := Decrypt(string(Password), account.Privatekey)
+
+			// Set up auth with signing function
+			err = relay.Auth(ctx, func(evt *nostr.Event) error {
+				return evt.Sign(decryptedKey)
+			})
+			if err != nil {
+				TheLog.Printf("Failed to authenticate with relay %s: %v\n", dmr.Url, err)
+			} else {
+				TheLog.Printf("Successfully authenticated with relay %s\n", dmr.Url)
+			}
+		}
+
+		// create a subscription and submit to relay
+		if sub, err := relay.Subscribe(ctx, dmFilters); err != nil {
+			TheLog.Printf("failed to subscribe to relay: %s, %v\n", dmr.Url, err)
+		} else {
+			TheLog.Printf("subscribed to dm feed from relay: %s for pubkey: %s\n", dmr.Url, pubkey)
+			nostrSubs = append(nostrSubs, sub)
+			go func() {
+				processSub(sub, relay, pubkey)
+			}()
+		}
+	}
+}
+
 func doRelay(db *gorm.DB, ctx context.Context, url string) bool {
 	// get active pubkey from db
 	var account Account
@@ -190,13 +285,6 @@ func doRelay(db *gorm.DB, ctx context.Context, url string) bool {
 			Kinds:   []int{10050},
 			Limit:   1,
 			Authors: []string{pubkey},
-		},
-		{
-			Kinds: []int{1059},
-			Limit: 2000,
-			Tags: nostr.TagMap{
-				"p": []string{pubkey},
-			},
 		},
 	}
 
@@ -521,26 +609,23 @@ func processSub(sub *nostr.Subscription, relay *nostr.Relay, pubkey string) {
 					}
 
 					// Create new chat message
-
-					firstPtag := k14.Tags.GetFirst([]string{"p"})
-					if firstPtag == nil {
-						TheLog.Printf("Error getting first p tag")
-						continue
-					}
-					tagValue := firstPtag.Value()
-					if tagValue == "" || !isHex(tagValue) {
-						TheLog.Printf("skipping invalid pubkey from message: %s", tagValue)
-						continue
+					var useThisPtag string
+					for _, tag := range k14.Tags.GetAll([]string{"p"}) {
+						if tag.Value() != k14.PubKey {
+							useThisPtag = tag.Value()
+							break
+						}
 					}
 
 					m = ChatMessage{
 						FromPubkey: k14.PubKey,
-						ToPubkey:   tagValue,
+						ToPubkey:   useThisPtag,
 						Content:    k14.Content,
 						EventId:    ev.ID,
 						Timestamp:  time.Unix(int64(k14.CreatedAt), 0),
 					}
 
+					TheLog.Printf("Creating chat message: %+v", m)
 					if err := DB.Create(&m).Error; err != nil {
 						TheLog.Printf("Error creating chat message: %v", err)
 					} else {

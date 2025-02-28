@@ -71,6 +71,8 @@ func main() {
 		doRelay(DB, CTX, url)
 	}
 
+	doDMRelays(DB, CTX)
+
 	go watchInterrupt()
 
 	g, err := gocui.NewGui(gocui.OutputTrue, true)

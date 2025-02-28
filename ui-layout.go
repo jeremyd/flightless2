@@ -81,6 +81,7 @@ func layout(g *gocui.Gui) error {
 		}
 		v.Title = "Keybinds"
 		v.Editable = false
+		v.Autoscroll = true
 		v.Frame = true
 		v.BgColor = uiColorBg
 		v.FgColor = uiColorFg

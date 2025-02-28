@@ -19,7 +19,7 @@ func keybindings(g *gocui.Gui) error {
 	}
 
 	// r key (refresh)
-	if err := g.SetKeybinding("", rune(0x72), gocui.ModNone, refreshV2); err != nil {
+	if err := g.SetKeybinding("", rune(0x72), gocui.ModNone, refreshAll); err != nil {
 		TheLog.Panicln(err)
 	}
 	// s key (search)

@@ -38,8 +38,18 @@ func wrapText(text string, width int) string {
 	return wrapped.String()
 }
 
+func refreshAll(g *gocui.Gui, v *gocui.View) error {
+	refreshV2Conversations(g, v)
+	v2, _ := g.View("v2")
+	_, cy := v2.Cursor()
+	refreshV3(g, cy)
+	refreshV4(g, cy)
+	return nil
+}
+
 func refreshV2Conversations(g *gocui.Gui, v *gocui.View) error {
 	v2, _ := g.View("v2")
+	_, oldCursor := v2.Cursor()
 	v2.Clear()
 
 	// get the active account pubkey
@@ -109,14 +119,17 @@ func refreshV2Conversations(g *gocui.Gui, v *gocui.View) error {
 			fmt.Fprintf(v2, "%-30s\n", metadata.PubkeyHex)
 		}
 	}
-	_, cursor := v2.Cursor()
 
-	// Reset cursor to first line if needed
-	if cursor < 0 {
-		cursor = 0
-		v2.SetCursor(0, 0)
-		v2.SetHighlight(0, true)
-	}
+	v2.SetCursor(0, oldCursor)
+
+	/*
+		// Reset cursor to first line if needed
+		if cursor < 0 {
+			cursor = 0
+			v2.SetCursor(0, 0)
+			v2.SetHighlight(0, true)
+		}
+	*/
 
 	return nil
 }
