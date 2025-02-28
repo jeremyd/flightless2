@@ -228,7 +228,7 @@ func refreshV2(g *gocui.Gui, v *gocui.View) error {
 
 	// sort by recent ChatMessages
 
-	v2Meta = v2MetaFiltered
+	v2Meta = curFollows
 
 	_, vSizeY := v2.Size()
 	maxDisplay := vSizeY - 1

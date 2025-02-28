@@ -99,6 +99,32 @@ func keybindings(g *gocui.Gui) error {
 		log.Panicln(err)
 	}
 
+	/* fetch view */
+	// rune for "f"
+	if err := g.SetKeybinding("v2", rune(0x66), gocui.ModNone, fetch); err != nil {
+		log.Panicln(err)
+	}
+	
+	// rune for "p" - fetch by pubkey/npub
+	if err := g.SetKeybinding("", rune(0x70), gocui.ModNone, fetchByPubkey); err != nil {
+		log.Panicln(err)
+	}
+	
+	// Enter key in fetchpubkey view
+	if err := g.SetKeybinding("fetchpubkey", gocui.KeyEnter, gocui.ModNone, doFetchByPubkey); err != nil {
+		log.Panicln(err)
+	}
+	
+	// ESC key in fetchpubkey view
+	if err := g.SetKeybinding("fetchpubkey", gocui.KeyEsc, gocui.ModNone, cancelFetchPubkey); err != nil {
+		log.Panicln(err)
+	}
+
+	/* fetch results view */
+	if err := g.SetKeybinding("fetchresults", gocui.KeyEsc, gocui.ModNone, closeFetchResults); err != nil {
+		log.Panicln(err)
+	}
+
 	/* config view for accounts */
 	//cancel key
 	if err := g.SetKeybinding("config", gocui.KeyEsc, gocui.ModNone, cancelConfig); err != nil {

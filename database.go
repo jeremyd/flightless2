@@ -38,8 +38,8 @@ type Metadata struct {
 	ContactsUpdatedAt time.Time   `gorm:"default:CURRENT_TIMESTAMP"`
 	MetadataUpdatedAt time.Time   `gorm:"default:CURRENT_TIMESTAMP"`
 	Follows           []*Metadata `gorm:"many2many:metadata_follows;foreignKey:PubkeyHex;references:PubkeyHex"`
-	RawJsonContent    string      `gorm:"size:512000"`
 	DMRelays          []DMRelay   `gorm:"foreignKey:PubkeyHex;references:PubkeyHex"`
+	RawJsonContent    string      `gorm:"size:512000"`
 }
 
 type DMRelay struct {
@@ -66,6 +66,16 @@ type ChatMessage struct {
 	ToPubkey   string    `gorm:"size:65"`
 	Content    string    `gorm:"size:65535"`
 	Timestamp  time.Time `gorm:"autoUpdateTime"`
+}
+
+type RelayList struct {
+	ID        int64     `gorm:"primaryKey;autoIncrement"`
+	PubkeyHex string    `gorm:"size:65;index"`
+	Url       string    `gorm:"size:512"`
+	Read      bool      `gorm:"default:true"`
+	Write     bool      `gorm:"default:true"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime"`
+	CreatedAt time.Time `gorm:"autoCreateTime"`
 }
 
 func GetGormConnection() *gorm.DB {
@@ -119,5 +129,8 @@ func RunMigrations() {
 	}
 	if err := DB.AutoMigrate(&ChatMessage{}); err != nil {
 		log.Fatalf("Failed to migrate ChatMessage table: %v", err)
+	}
+	if err := DB.AutoMigrate(&RelayList{}); err != nil {
+		log.Fatalf("Failed to migrate RelayList table: %v", err)
 	}
 }
