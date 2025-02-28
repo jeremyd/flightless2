@@ -13,6 +13,9 @@ import (
 // current page?
 var displayV2Meta []Metadata
 
+// 0 is the conversations results page, 1 is the search results page
+var v2MetaDisplay = 0
+
 // wrapText wraps text to fit within a given width, preserving words
 func wrapText(text string, width int) string {
 	words := strings.Fields(strings.TrimSpace(text))
@@ -48,6 +51,7 @@ func refreshAll(g *gocui.Gui, v *gocui.View) error {
 }
 
 func refreshV2Conversations(g *gocui.Gui, v *gocui.View) error {
+	v2MetaDisplay = 0
 	v2, _ := g.View("v2")
 	_, oldCursor := v2.Cursor()
 	v2.Clear()
@@ -186,6 +190,7 @@ func refreshV3(g *gocui.Gui, cy int) error {
 }
 
 func refreshV2(g *gocui.Gui, v *gocui.View) error {
+	v2MetaDisplay = 1
 	TheLog.Println("refreshing v2")
 	v2, _ := g.View("v2")
 	v2.Clear()

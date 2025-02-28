@@ -93,14 +93,16 @@ func layout(g *gocui.Gui) error {
 		r := fmt.Sprintf("(%s)efresh", fmt.Sprintf(NoticeColor, "R"))
 		t := fmt.Sprintf("(%s)next window", fmt.Sprintf(NoticeColor, "TAB"))
 		a := fmt.Sprintf("(%s)dd relay", fmt.Sprintf(NoticeColor, "A"))
+		w := fmt.Sprintf("(%s)write note", fmt.Sprintf(NoticeColor, "ENTER"))
 
-		fmt.Fprintf(v, "%-30s%-30s%-30s%-30s%-30s\n", s, q, r, t, a)
-		z := fmt.Sprintf("(%s)Select ALL", fmt.Sprintf(NoticeColor, "Z"))
+		fmt.Fprintf(v, "%-30s%-30s%-30s%-30s%-30s%-30s\n", s, q, r, t, a, w)
+		z := fmt.Sprintf("(%s)ap", fmt.Sprintf(NoticeColor, "Z"))
 		d := fmt.Sprintf("(%s)elete relay", fmt.Sprintf(NoticeColor, "D"))
 		c := fmt.Sprintf("(%s)onfigure keys", fmt.Sprintf(NoticeColor, "C"))
 		fe := fmt.Sprintf("(%s)etch person", fmt.Sprintf(NoticeColor, "F"))
 		p := fmt.Sprintf("(%s)ubkey lookup", fmt.Sprintf(NoticeColor, "P"))
-		fmt.Fprintf(v, "%-30s%-30s%-30s%-30s%-30s\n\n", z, d, c, fe, p)
+		tt := fmt.Sprintf("(%s)oggle view", fmt.Sprintf(NoticeColor, "T"))
+		fmt.Fprintf(v, "%-30s%-30s%-30s%-30s%-30s%-30s\n\n", z, d, c, fe, p, tt)
 
 	}
 

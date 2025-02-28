@@ -45,6 +45,11 @@ func keybindings(g *gocui.Gui) error {
 		log.Panicln(err)
 	}
 
+	// t key is toggle conversation/follows
+	if err := g.SetKeybinding("v2", rune(0x74), gocui.ModNone, toggleConversationFollows); err != nil {
+		log.Panicln(err)
+	}
+
 	/* addrelay view */
 	if err := g.SetKeybinding("v2", rune(0x61), gocui.ModNone, addRelay); err != nil {
 		log.Panicln(err)
@@ -104,17 +109,17 @@ func keybindings(g *gocui.Gui) error {
 	if err := g.SetKeybinding("v2", rune(0x66), gocui.ModNone, fetch); err != nil {
 		log.Panicln(err)
 	}
-	
+
 	// rune for "p" - fetch by pubkey/npub
 	if err := g.SetKeybinding("", rune(0x70), gocui.ModNone, fetchByPubkey); err != nil {
 		log.Panicln(err)
 	}
-	
+
 	// Enter key in fetchpubkey view
 	if err := g.SetKeybinding("fetchpubkey", gocui.KeyEnter, gocui.ModNone, doFetchByPubkey); err != nil {
 		log.Panicln(err)
 	}
-	
+
 	// ESC key in fetchpubkey view
 	if err := g.SetKeybinding("fetchpubkey", gocui.KeyEsc, gocui.ModNone, cancelFetchPubkey); err != nil {
 		log.Panicln(err)

@@ -305,7 +305,10 @@ func showPersonData(g *gocui.Gui, pubkey string) error {
 			// Query the database for the metadata
 			var metadata Metadata
 			result := DB.Where("pubkey_hex = ?", pubkey).First(&metadata)
-			if result.Error == nil {
+			if result.Error != nil {
+				fmt.Fprintf(fetchResultsView, "===== PROFILE METADATA =====\n")
+				fmt.Fprintf(fetchResultsView, "No metadata found for this pubkey\n")
+			} else {
 				// Display the metadata
 				fmt.Fprintf(fetchResultsView, "===== PROFILE METADATA =====\n")
 				fmt.Fprintf(fetchResultsView, "Name: %s\n", metadata.Name)
@@ -316,14 +319,14 @@ func showPersonData(g *gocui.Gui, pubkey string) error {
 				fmt.Fprintf(fetchResultsView, "Lightning Address: %s\n", metadata.Lud16)
 				fmt.Fprintf(fetchResultsView, "Total Follows: %d\n", metadata.TotalFollows)
 				fmt.Fprintf(fetchResultsView, "Last Updated: %s\n", metadata.MetadataUpdatedAt.Format("2006-01-02 15:04:05"))
-			} else {
-				fmt.Fprintf(fetchResultsView, "===== PROFILE METADATA =====\n")
-				fmt.Fprintf(fetchResultsView, "No metadata found for this pubkey\n")
 			}
 
 			// Display regular relay list
 			var relays []RelayList
-			DB.Where("pubkey_hex = ?", pubkey).Find(&relays)
+			result = DB.Where("pubkey_hex = ?", pubkey).Find(&relays)
+			if result.Error != nil {
+				TheLog.Printf("Error querying relay_list: %v", result.Error)
+			}
 
 			fmt.Fprintf(fetchResultsView, "\n===== RELAY LIST =====\n")
 			if len(relays) > 0 {
@@ -343,10 +346,13 @@ func showPersonData(g *gocui.Gui, pubkey string) error {
 			}
 
 			// Display DM relay list
-			fmt.Fprintf(fetchResultsView, "\n===== DM RELAY LIST =====\n")
 			var dmRelays []DMRelay
-			DB.Where("pubkey_hex = ?", pubkey).Find(&dmRelays)
+			result = DB.Where("pubkey_hex = ?", pubkey).Find(&dmRelays)
+			if result.Error != nil {
+				TheLog.Printf("Error querying dm_relays: %v", result.Error)
+			}
 
+			fmt.Fprintf(fetchResultsView, "\n===== DM RELAY LIST =====\n")
 			if len(dmRelays) > 0 {
 				for _, relay := range dmRelays {
 					fmt.Fprintf(fetchResultsView, "  %s\n", relay.Url)
@@ -373,7 +379,10 @@ func fetchRelayList(g *gocui.Gui, pubkey string) {
 
 	// Get relays for this pubkey from the database
 	var relayList []RelayList
-	DB.Where("pubkey_hex = ?", pubkey).Find(&relayList)
+	result := DB.Where("pubkey_hex = ?", pubkey).Find(&relayList)
+	if result.Error != nil {
+		TheLog.Printf("Error querying relay_list: %v", result.Error)
+	}
 
 	// If no relays found for this pubkey, use the global relay list
 	if len(relayList) == 0 {
@@ -381,7 +390,10 @@ func fetchRelayList(g *gocui.Gui, pubkey string) {
 
 		// Get active relays from the database
 		var relayStatuses []RelayStatus
-		DB.Find(&relayStatuses)
+		result := DB.Find(&relayStatuses)
+		if result.Error != nil {
+			TheLog.Printf("Error querying relay_status: %v", result.Error)
+		}
 
 		if len(relayStatuses) == 0 {
 			TheLog.Printf("No relays configured in the database")
@@ -982,6 +994,18 @@ func processRelayListEvent(g *gocui.Gui, evt *nostr.Event, pubkey string) {
 	})
 }
 
+func toggleConversationFollows(g *gocui.Gui, v *gocui.View) error {
+	if v2MetaDisplay == 1 {
+		v2MetaDisplay = 0
+		refreshV2Conversations(g, v)
+	} else {
+		v2MetaDisplay = 1
+		refreshV2(g, v)
+	}
+
+	return nil
+}
+
 func cancelFetchPubkey(g *gocui.Gui, v *gocui.View) error {
 	if err := g.DeleteView("fetchpubkey"); err != nil {
 		return err
@@ -989,104 +1013,6 @@ func cancelFetchPubkey(g *gocui.Gui, v *gocui.View) error {
 	if _, err := g.SetCurrentView("v2"); err != nil {
 		return err
 	}
-	return nil
-}
-
-func doFetch(g *gocui.Gui, v *gocui.View) error {
-	// Create or get the fetch results view
-	maxX, maxY := g.Size()
-	if v, err := g.SetView("fetchresults", maxX/4, maxY/4, maxX*3/4, maxY*3/4, 0); err != nil {
-		if !errors.Is(err, gocui.ErrUnknownView) {
-			return err
-		}
-		v.Title = "Person Data"
-		v.Editable = false
-		v.Wrap = true
-		v.Autoscroll = true
-		v.Clear()
-	}
-
-	fetchResultsView, _ := g.View("fetchresults")
-	fetchResultsView.Clear()
-
-	var pubkey string
-
-	// Check if we're coming from the fetch dialog or directly from v2
-	fetchView, fetchErr := g.View("fetch")
-	if fetchErr == nil {
-		// Coming from fetch dialog - get input from the dialog
-		pubkeyInput := strings.TrimSpace(fetchView.Buffer())
-
-		// Check if input is empty
-		if pubkeyInput == "" {
-			if err := g.DeleteView("fetch"); err != nil {
-				return err
-			}
-			if err := g.DeleteView("fetchresults"); err != nil {
-				return err
-			}
-			if _, err := g.SetCurrentView("v2"); err != nil {
-				return err
-			}
-			return nil
-		}
-
-		// Process the pubkey/npub input
-		pubkey = pubkeyInput
-		// Check if it's an npub and convert to hex if needed
-		if strings.HasPrefix(pubkeyInput, "npub") {
-			_, decodedPubkey, err := nip19.Decode(pubkeyInput)
-			if err != nil {
-				fmt.Fprintf(fetchResultsView, "Error: Invalid npub format\n")
-				return nil
-			}
-			pubkey = decodedPubkey.(string)
-		}
-
-		// Delete the fetch input view
-		if err := g.DeleteView("fetch"); err != nil {
-			return err
-		}
-	} else {
-		// Coming directly from v2 - get pubkey from the cursor position
-		v2, _ := g.View("v2")
-		_, cy := v2.Cursor()
-
-		if len(displayV2Meta) == 0 || cy >= len(displayV2Meta) {
-			TheLog.Println("out of bounds of the displayV2Meta", cy)
-			if err := g.DeleteView("fetchresults"); err != nil {
-				return err
-			}
-			return nil
-		}
-		pubkey = displayV2Meta[cy].PubkeyHex
-	}
-
-	// Query the database for the metadata
-	var metadata Metadata
-	result := DB.Where("pubkey_hex = ?", pubkey).First(&metadata)
-	if result.Error != nil {
-		fmt.Fprintf(fetchResultsView, "No data found for pubkey: %s\n", pubkey)
-		fmt.Fprintf(fetchResultsView, "Press ESC to close this view\n")
-		return nil
-	}
-
-	// Display the metadata
-	fmt.Fprintf(fetchResultsView, "Name: %s\n", metadata.Name)
-	fmt.Fprintf(fetchResultsView, "Display Name: %s\n", metadata.DisplayName)
-	fmt.Fprintf(fetchResultsView, "About: %s\n", metadata.About)
-	fmt.Fprintf(fetchResultsView, "NIP-05: %s\n", metadata.Nip05)
-	fmt.Fprintf(fetchResultsView, "Website: %s\n", metadata.Website)
-	fmt.Fprintf(fetchResultsView, "Lightning Address: %s\n", metadata.Lud16)
-	fmt.Fprintf(fetchResultsView, "Total Follows: %d\n", metadata.TotalFollows)
-	fmt.Fprintf(fetchResultsView, "Last Updated: %s\n", metadata.MetadataUpdatedAt.Format("2006-01-02 15:04:05"))
-	fmt.Fprintf(fetchResultsView, "\nPress ESC to close this view\n")
-
-	// Set the current view to the fetch results
-	if _, err := g.SetCurrentView("fetchresults"); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -1331,7 +1257,11 @@ func cursorDownV2(g *gocui.Gui, v *gocui.View) error {
 				}
 			}
 			CurrOffset += (vSizeY - 1)
-			refreshV2Conversations(g, v)
+			if v2MetaDisplay == 0 {
+				refreshV2Conversations(g, v)
+			} else {
+				refreshV2(g, v)
+			}
 			v.SetHighlight(0, true)
 			refreshV3(g, 0)
 			return nil
@@ -1371,7 +1301,11 @@ func cursorUpV2(g *gocui.Gui, v *gocui.View) error {
 				newOffset = CurrOffset - (vSizeY - 1)
 			}
 			CurrOffset = newOffset
-			refreshV2Conversations(g, v)
+			if v2MetaDisplay == 0 {
+				refreshV2Conversations(g, v)
+			} else if v2MetaDisplay == 1 {
+				refreshV2(g, v)
+			}
 
 			// Move cursor to bottom of view unless we're at the start
 			newY := vSizeY - 2
@@ -1447,9 +1381,6 @@ func activateConfig(
 	v2.SetCursor(0, 0)
 	refreshV2Conversations(g, v)
 	refreshV3(g, 0)
-
-	ctx := context.Background()
-	doDMRelays(DB, ctx)
 	return nil
 }
 
