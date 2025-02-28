@@ -281,30 +281,84 @@ func showPersonData(g *gocui.Gui, pubkey string) error {
 	fetchResultsView.Clear()
 	fetchResultsView.Autoscroll = true
 
-	// Query the database for the metadata
-	var metadata Metadata
-	result := DB.Where("pubkey_hex = ?", pubkey).First(&metadata)
-	if result.Error != nil {
-		fmt.Fprintf(fetchResultsView, "No data found for pubkey: %s\n", pubkey)
-		fmt.Fprintf(fetchResultsView, "Press ESC to close this view\n")
-		return nil
-	}
+	// Display a loading message
+	fmt.Fprintf(fetchResultsView, "Fetching data for pubkey: %s\n", pubkey)
+	fmt.Fprintf(fetchResultsView, "Please wait...\n")
 
-	// Display the metadata
-	fmt.Fprintf(fetchResultsView, "Name: %s\n", metadata.Name)
-	fmt.Fprintf(fetchResultsView, "Display Name: %s\n", metadata.DisplayName)
-	fmt.Fprintf(fetchResultsView, "About: %s\n", metadata.About)
-	fmt.Fprintf(fetchResultsView, "NIP-05: %s\n", metadata.Nip05)
-	fmt.Fprintf(fetchResultsView, "Website: %s\n", metadata.Website)
-	fmt.Fprintf(fetchResultsView, "Lightning Address: %s\n", metadata.Lud16)
-	fmt.Fprintf(fetchResultsView, "Total Follows: %d\n", metadata.TotalFollows)
-	fmt.Fprintf(fetchResultsView, "Last Updated: %s\n", metadata.MetadataUpdatedAt.Format("2006-01-02 15:04:05"))
+	// Fetch data asynchronously
+	go func() {
+		// Fetch and process relay list
+		fetchRelayList(g, pubkey)
 
-	// Fetch and display relay list
-	go fetchRelayList(g, pubkey)
+		// Wait a moment for the fetch to complete
+		time.Sleep(6 * time.Second)
 
-	fmt.Fprintf(fetchResultsView, "\nFetching relay list...\n")
-	fmt.Fprintf(fetchResultsView, "\nPress ESC to close this view\n")
+		// Now display all the information
+		g.Update(func(g *gocui.Gui) error {
+			fetchResultsView, err := g.View("fetchresults")
+			if err != nil {
+				return err
+			}
+
+			fetchResultsView.Clear()
+
+			// Query the database for the metadata
+			var metadata Metadata
+			result := DB.Where("pubkey_hex = ?", pubkey).First(&metadata)
+			if result.Error == nil {
+				// Display the metadata
+				fmt.Fprintf(fetchResultsView, "===== PROFILE METADATA =====\n")
+				fmt.Fprintf(fetchResultsView, "Name: %s\n", metadata.Name)
+				fmt.Fprintf(fetchResultsView, "Display Name: %s\n", metadata.DisplayName)
+				fmt.Fprintf(fetchResultsView, "About: %s\n", metadata.About)
+				fmt.Fprintf(fetchResultsView, "NIP-05: %s\n", metadata.Nip05)
+				fmt.Fprintf(fetchResultsView, "Website: %s\n", metadata.Website)
+				fmt.Fprintf(fetchResultsView, "Lightning Address: %s\n", metadata.Lud16)
+				fmt.Fprintf(fetchResultsView, "Total Follows: %d\n", metadata.TotalFollows)
+				fmt.Fprintf(fetchResultsView, "Last Updated: %s\n", metadata.MetadataUpdatedAt.Format("2006-01-02 15:04:05"))
+			} else {
+				fmt.Fprintf(fetchResultsView, "===== PROFILE METADATA =====\n")
+				fmt.Fprintf(fetchResultsView, "No metadata found for this pubkey\n")
+			}
+
+			// Display regular relay list
+			var relays []RelayList
+			DB.Where("pubkey_hex = ?", pubkey).Find(&relays)
+
+			fmt.Fprintf(fetchResultsView, "\n===== RELAY LIST =====\n")
+			if len(relays) > 0 {
+				for _, relay := range relays {
+					readStr := "✓"
+					writeStr := "✓"
+					if !relay.Read {
+						readStr = "✗"
+					}
+					if !relay.Write {
+						writeStr = "✗"
+					}
+					fmt.Fprintf(fetchResultsView, "  %s [Read: %s, Write: %s]\n", relay.Url, readStr, writeStr)
+				}
+			} else {
+				fmt.Fprintf(fetchResultsView, "  None\n")
+			}
+
+			// Display DM relay list
+			fmt.Fprintf(fetchResultsView, "\n===== DM RELAY LIST =====\n")
+			var dmRelays []DMRelay
+			DB.Where("pubkey_hex = ?", pubkey).Find(&dmRelays)
+
+			if len(dmRelays) > 0 {
+				for _, relay := range dmRelays {
+					fmt.Fprintf(fetchResultsView, "  %s\n", relay.Url)
+				}
+			} else {
+				fmt.Fprintf(fetchResultsView, "  None\n")
+			}
+
+			fmt.Fprintf(fetchResultsView, "\nPress ESC to close this view\n")
+			return nil
+		})
+	}()
 
 	// Set the current view to the fetch results
 	if _, err := g.SetCurrentView("fetchresults"); err != nil {
@@ -315,331 +369,486 @@ func showPersonData(g *gocui.Gui, pubkey string) error {
 }
 
 func fetchRelayList(g *gocui.Gui, pubkey string) {
-	ctx := context.Background()
+	TheLog.Printf("Fetching relay list for pubkey: %s", pubkey)
 
-	// First check if we already have relay list data in the database
-	var relays []RelayList
-	DB.Where("pubkey_hex = ?", pubkey).Find(&relays)
+	// Get relays for this pubkey from the database
+	var relayList []RelayList
+	DB.Where("pubkey_hex = ?", pubkey).Find(&relayList)
 
-	// If we have relay data, update the view
-	if len(relays) > 0 {
-		g.Update(func(g *gocui.Gui) error {
-			fetchResultsView, err := g.View("fetchresults")
-			if err != nil {
-				return err
-			}
+	// If no relays found for this pubkey, use the global relay list
+	if len(relayList) == 0 {
+		TheLog.Printf("No relays found for pubkey %s, using global relay list", pubkey)
 
-			fmt.Fprintf(fetchResultsView, "\nRelay List:\n")
-			for _, relay := range relays {
-				readStr := "✓"
-				writeStr := "✓"
-				if !relay.Read {
-					readStr = "✗"
-				}
-				if !relay.Write {
-					writeStr = "✗"
-				}
-				fmt.Fprintf(fetchResultsView, "  %s [Read: %s, Write: %s]\n", relay.Url, readStr, writeStr)
-			}
-			return nil
-		})
-		return
-	}
+		// Get active relays from the database
+		var relayStatuses []RelayStatus
+		DB.Find(&relayStatuses)
 
-	// Get active relays from the database
-	var relayStatuses []RelayStatus
-	DB.Find(&relayStatuses)
-
-	if len(relayStatuses) == 0 {
-		g.Update(func(g *gocui.Gui) error {
-			fetchResultsView, err := g.View("fetchresults")
-			if err != nil {
-				return err
-			}
-
-			fmt.Fprintf(fetchResultsView, "\nNo relays configured to fetch data from.\n")
-			return nil
-		})
-		return
-	}
-
-	// Create filters for kind 10002 events
-	filters := []nostr.Filter{
-		{
-			Kinds:   []int{10002},
-			Limit:   5,
-			Authors: []string{pubkey},
-		},
-	}
-
-	// Track if we found any relay list events
-	foundRelayList := false
-	var foundRelayListMutex sync.Mutex
-
-	// Use a wait group to track all goroutines
-	var wg sync.WaitGroup
-
-	// Try to fetch from each relay
-	for _, relayStatus := range relayStatuses {
-		wg.Add(1)
-
-		// Use a separate goroutine for each relay
-		go func(relayUrl string) {
-			defer wg.Done()
-
-			// Connect to the relay
-			relay, err := nostr.RelayConnect(ctx, relayUrl)
-			if err != nil {
-				TheLog.Printf("Failed to connect to relay %s: %v", relayUrl, err)
-				return
-			}
-			defer relay.Close()
-
-			// Create a subscription
-			sub, err := relay.Subscribe(ctx, filters)
-			if err != nil {
-				TheLog.Printf("Failed to subscribe to relay %s: %v", relayUrl, err)
-				return
-			}
-			defer sub.Unsub()
-
-			// Handle End of Stored Events in a separate goroutine
-			eoseReceived := make(chan struct{})
-			go func() {
-				<-sub.EndOfStoredEvents
-				TheLog.Printf("Got EOSE from %s", relayUrl)
-				close(eoseReceived)
-			}()
-
-			// Set a timeout for the subscription
-			timeout := time.After(5 * time.Second)
-
-			// Process events from this subscription
-			for {
-				select {
-				case <-timeout:
-					TheLog.Printf("Timeout waiting for events from %s", relayUrl)
-					return
-				case <-eoseReceived:
-					TheLog.Printf("Finished processing stored events from %s", relayUrl)
-					return
-				case evt, ok := <-sub.Events:
-					if !ok {
-						// Channel closed
-						TheLog.Printf("Event channel closed for %s", relayUrl)
-						return
-					}
-
-					if evt != nil && evt.Kind == 10002 {
-						TheLog.Printf("Found relay list event from %s: %s", relayUrl, evt.Content)
-						foundRelayListMutex.Lock()
-						foundRelayList = true
-						foundRelayListMutex.Unlock()
-
-						// Process the relay list event
-						processRelayListEvent(g, evt, pubkey)
-					}
-				}
-			}
-		}(relayStatus.Url)
-	}
-
-	// Don't wait for goroutines to finish, but start a separate goroutine to check results
-	go func() {
-		// Wait for all relay connections to finish or timeout
-		done := make(chan struct{})
-		go func() {
-			wg.Wait()
-			close(done)
-		}()
-
-		// Either wait for all goroutines to finish or timeout after 6 seconds
-		select {
-		case <-done:
-			TheLog.Printf("All relay connections finished")
-		case <-time.After(6 * time.Second):
-			TheLog.Printf("Timeout waiting for relay connections")
+		if len(relayStatuses) == 0 {
+			TheLog.Printf("No relays configured in the database")
+			return
 		}
 
-		// Check if we found any relay lists
-		foundRelayListMutex.Lock()
-		relayListFound := foundRelayList
-		foundRelayListMutex.Unlock()
+		// Create a wait group to wait for all relay connections
+		var wg sync.WaitGroup
+		var foundMutex sync.Mutex
+		var foundRelayList, foundMetadata, foundDMRelayList bool
 
-		if !relayListFound {
-			g.Update(func(g *gocui.Gui) error {
-				fetchResultsView, err := g.View("fetchresults")
-				if err != nil {
-					return err
-				}
-
-				fmt.Fprintf(fetchResultsView, "\nNo relay list found for this pubkey.\n")
-				return nil
-			})
-		}
-	}()
-
-	// Fetch additional data from outbox relays
-	go fetchFromOutboxRelays(g, pubkey)
-}
-
-func fetchFromOutboxRelays(g *gocui.Gui, pubkey string) {
-	ctx := context.Background()
-	
-	// Get the relay list for this pubkey
-	var relays []RelayList
-	DB.Where("pubkey_hex = ?", pubkey).Find(&relays)
-	
-	if len(relays) == 0 {
-		TheLog.Printf("No relay list found for pubkey %s, cannot fetch additional data", pubkey)
-		return
-	}
-	
-	// Create filters for kind 0 (profile) and kind 10050 (DM relays) events
-	filters := []nostr.Filter{
-		{
-			Kinds:   []int{0},
-			Limit:   1,
-			Authors: []string{pubkey},
-		},
-		{
-			Kinds:   []int{10050},
-			Limit:   1,
-			Authors: []string{pubkey},
-		},
-	}
-	
-	// Use a wait group to track all goroutines
-	var wg sync.WaitGroup
-	
-	// Track if we found any events
-	foundProfile := false
-	foundDMRelays := false
-	var foundMutex sync.Mutex
-	
-	// Connect to each relay in the relay list (prioritize write relays)
-	for _, relay := range relays {
-		// Only use relays marked for write (outbox relays)
-		if relay.Write {
-			wg.Add(1)
-			
+		wg.Add(len(relayStatuses))
+		for _, relayStatus := range relayStatuses {
 			go func(relayUrl string) {
 				defer wg.Done()
-				
-				// Connect to the relay
-				relay, err := nostr.RelayConnect(ctx, relayUrl)
+
+				// Connect to relay
+				relay, err := nostr.RelayConnect(context.Background(), relayUrl)
 				if err != nil {
-					TheLog.Printf("Failed to connect to outbox relay %s: %v", relayUrl, err)
+					TheLog.Printf("Error connecting to relay %s: %v", relayUrl, err)
 					return
 				}
 				defer relay.Close()
-				
-				// Create a subscription
-				sub, err := relay.Subscribe(ctx, filters)
+
+				// Create filters for the different event kinds we want to fetch
+				filters := []nostr.Filter{
+					// Kind 0: Metadata
+					{
+						Kinds:   []int{0},
+						Authors: []string{pubkey},
+						Limit:   1,
+					},
+					// Kind 10002: Relay List
+					{
+						Kinds:   []int{10002},
+						Authors: []string{pubkey},
+						Limit:   1,
+					},
+					// Kind 10050: DM Relay List
+					{
+						Kinds:   []int{10050},
+						Authors: []string{pubkey},
+						Limit:   1,
+					},
+				}
+
+				// Subscribe to events
+				sub, err := relay.Subscribe(context.Background(), filters)
 				if err != nil {
-					TheLog.Printf("Failed to subscribe to outbox relay %s: %v", relayUrl, err)
+					TheLog.Printf("Error subscribing to relay %s: %v", relayUrl, err)
 					return
 				}
-				defer sub.Unsub()
-				
-				// Handle End of Stored Events in a separate goroutine
-				eoseReceived := make(chan struct{})
-				go func() {
-					<-sub.EndOfStoredEvents
-					TheLog.Printf("Got EOSE from outbox relay %s", relayUrl)
-					close(eoseReceived)
-				}()
-				
-				// Set a timeout for the subscription
-				timeout := time.After(5 * time.Second)
-				
-				// Process events from this subscription
-				for {
-					select {
-					case <-timeout:
-						TheLog.Printf("Timeout waiting for events from outbox relay %s", relayUrl)
-						return
-					case <-eoseReceived:
-						TheLog.Printf("Finished processing stored events from outbox relay %s", relayUrl)
-						return
-					case evt, ok := <-sub.Events:
-						if !ok {
-							// Channel closed
-							TheLog.Printf("Event channel closed for outbox relay %s", relayUrl)
-							return
-						}
-						
-						if evt != nil {
-							if evt.Kind == 0 {
-								// Process profile metadata
-								TheLog.Printf("Found profile metadata from outbox relay %s", relayUrl)
-								foundMutex.Lock()
-								foundProfile = true
-								foundMutex.Unlock()
-								
-								// Process the metadata event
-								processMetadataEvent(g, evt)
-							} else if evt.Kind == 10050 {
-								// Process DM relay list
-								TheLog.Printf("Found DM relay list from outbox relay %s", relayUrl)
-								foundMutex.Lock()
-								foundDMRelays = true
-								foundMutex.Unlock()
-								
-								// Process the DM relay list event
-								processDMRelayListEvent(g, evt, pubkey)
-							}
-						}
+
+				// Process events as they come in
+				for evt := range sub.Events {
+					TheLog.Printf("Received event of kind %d from relay %s", evt.Kind, relayUrl)
+
+					if evt.Kind == 0 {
+						foundMutex.Lock()
+						foundMetadata = true
+						foundMutex.Unlock()
+						processMetadataEvent(g, evt, pubkey)
+					} else if evt.Kind == 10002 {
+						foundMutex.Lock()
+						foundRelayList = true
+						foundMutex.Unlock()
+						processRelayListEvent(g, evt, pubkey)
+					} else if evt.Kind == 10050 {
+						foundMutex.Lock()
+						foundDMRelayList = true
+						foundMutex.Unlock()
+						processDMRelayListEvent(g, evt, pubkey)
+					}
+				}
+			}(relayStatus.Url)
+		}
+
+		// Don't wait for goroutines to finish, but start a separate goroutine to check results
+		go func() {
+			// Wait for all relay connections to finish or timeout after 6 seconds
+			done := make(chan struct{})
+			go func() {
+				wg.Wait()
+				close(done)
+			}()
+
+			// Either wait for all goroutines to finish or timeout after 6 seconds
+			select {
+			case <-done:
+				TheLog.Printf("All relay connections finished")
+			case <-time.After(6 * time.Second):
+				TheLog.Printf("Timeout waiting for relay connections")
+			}
+
+			// Log the results but don't update the UI since showPersonData will handle that
+			foundMutex.Lock()
+			relayListFound := foundRelayList
+			metadataFound := foundMetadata
+			dmRelayListFound := foundDMRelayList
+			foundMutex.Unlock()
+
+			TheLog.Printf("Fetch results - Metadata: %v, RelayList: %v, DMRelayList: %v",
+				metadataFound, relayListFound, dmRelayListFound)
+		}()
+	} else {
+		// Use the relays from the relay_list table for this pubkey
+		TheLog.Printf("Found %d relays for pubkey %s", len(relayList), pubkey)
+
+		// Create a wait group to wait for all relay connections
+		var wg sync.WaitGroup
+		var foundMutex sync.Mutex
+		var foundRelayList, foundMetadata, foundDMRelayList bool
+
+		wg.Add(len(relayList))
+		for _, relay := range relayList {
+			// Only use relays that have read permission
+			if !relay.Read {
+				TheLog.Printf("Skipping relay %s (no read permission)", relay.Url)
+				wg.Done()
+				continue
+			}
+
+			go func(relayUrl string) {
+				defer wg.Done()
+
+				// Connect to relay
+				relay, err := nostr.RelayConnect(context.Background(), relayUrl)
+				if err != nil {
+					TheLog.Printf("Error connecting to relay %s: %v", relayUrl, err)
+					return
+				}
+				defer relay.Close()
+
+				// Create filters for the different event kinds we want to fetch
+				filters := []nostr.Filter{
+					// Kind 0: Metadata
+					{
+						Kinds:   []int{0},
+						Authors: []string{pubkey},
+						Limit:   1,
+					},
+					// Kind 10002: Relay List
+					{
+						Kinds:   []int{10002},
+						Authors: []string{pubkey},
+						Limit:   1,
+					},
+					// Kind 10050: DM Relay List
+					{
+						Kinds:   []int{10050},
+						Authors: []string{pubkey},
+						Limit:   1,
+					},
+				}
+
+				// Subscribe to events
+				sub, err := relay.Subscribe(context.Background(), filters)
+				if err != nil {
+					TheLog.Printf("Error subscribing to relay %s: %v", relayUrl, err)
+					return
+				}
+
+				// Process events as they come in
+				for evt := range sub.Events {
+					TheLog.Printf("Received event of kind %d from relay %s", evt.Kind, relayUrl)
+
+					if evt.Kind == 0 {
+						foundMutex.Lock()
+						foundMetadata = true
+						foundMutex.Unlock()
+						processMetadataEvent(g, evt, pubkey)
+					} else if evt.Kind == 10002 {
+						foundMutex.Lock()
+						foundRelayList = true
+						foundMutex.Unlock()
+						processRelayListEvent(g, evt, pubkey)
+					} else if evt.Kind == 10050 {
+						foundMutex.Lock()
+						foundDMRelayList = true
+						foundMutex.Unlock()
+						processDMRelayListEvent(g, evt, pubkey)
 					}
 				}
 			}(relay.Url)
 		}
-	}
-	
-	// Don't wait for goroutines to finish, but start a separate goroutine to check results
-	go func() {
-		// Wait for all relay connections to finish or timeout
-		done := make(chan struct{})
+
+		// Don't wait for goroutines to finish, but start a separate goroutine to check results
 		go func() {
-			wg.Wait()
-			close(done)
-		}()
-		
-		// Either wait for all goroutines to finish or timeout after 6 seconds
-		select {
-		case <-done:
-			TheLog.Printf("All outbox relay connections finished")
-		case <-time.After(6 * time.Second):
-			TheLog.Printf("Timeout waiting for outbox relay connections")
-		}
-		
-		// Update the UI with the results
-		g.Update(func(g *gocui.Gui) error {
-			fetchResultsView, err := g.View("fetchresults")
-			if err != nil {
-				return err
+			// Wait for all relay connections to finish or timeout after 6 seconds
+			done := make(chan struct{})
+			go func() {
+				wg.Wait()
+				close(done)
+			}()
+
+			// Either wait for all goroutines to finish or timeout after 6 seconds
+			select {
+			case <-done:
+				TheLog.Printf("All relay connections finished")
+			case <-time.After(6 * time.Second):
+				TheLog.Printf("Timeout waiting for relay connections")
 			}
-			
+
+			// Log the results but don't update the UI since showPersonData will handle that
 			foundMutex.Lock()
-			profileFound := foundProfile
-			dmRelaysFound := foundDMRelays
+			relayListFound := foundRelayList
+			metadataFound := foundMetadata
+			dmRelayListFound := foundDMRelayList
 			foundMutex.Unlock()
-			
-			if !profileFound && !dmRelaysFound {
-				fmt.Fprintf(fetchResultsView, "\nNo additional data found from outbox relays.\n")
-			} else {
-				if profileFound {
-					fmt.Fprintf(fetchResultsView, "\nUpdated profile metadata from outbox relays.\n")
+
+			TheLog.Printf("Fetch results - Metadata: %v, RelayList: %v, DMRelayList: %v",
+				metadataFound, relayListFound, dmRelayListFound)
+		}()
+	}
+}
+
+func processMetadataEvent(g *gocui.Gui, evt *nostr.Event, pubkey string) {
+	if evt == nil || evt.Kind != 0 {
+		return
+	}
+
+	TheLog.Printf("Processing metadata event: %s", evt.Content)
+
+	// Parse the metadata from the event
+	var metadataContent struct {
+		Name        string `json:"name"`
+		DisplayName string `json:"display_name"`
+		About       string `json:"about"`
+		Picture     string `json:"picture"`
+		Website     string `json:"website"`
+		Nip05       string `json:"nip05"`
+		Lud16       string `json:"lud16"`
+	}
+
+	if err := json.Unmarshal([]byte(evt.Content), &metadataContent); err != nil {
+		TheLog.Printf("Error parsing metadata: %v", err)
+
+		// Save raw content if we can't parse it
+		var existingMetadata Metadata
+		result := DB.Where("pubkey_hex = ?", pubkey).First(&existingMetadata)
+
+		if result.Error != nil {
+			// Create new metadata with raw content
+			npub, _ := nip19.EncodePublicKey(pubkey)
+
+			metadata := Metadata{
+				PubkeyHex:         pubkey,
+				PubkeyNpub:        npub,
+				RawJsonContent:    evt.Content,
+				MetadataUpdatedAt: evt.CreatedAt.Time(),
+				ContactsUpdatedAt: time.Unix(0, 0),
+			}
+
+			if err := DB.Create(&metadata).Error; err != nil {
+				TheLog.Printf("Error saving metadata to database: %v", err)
+			}
+		}
+
+		return
+	}
+
+	// Check if we already have this metadata
+	var existingMetadata Metadata
+	result := DB.Where("pubkey_hex = ?", pubkey).First(&existingMetadata)
+
+	if result.Error != nil {
+		// Create new metadata
+		npub, _ := nip19.EncodePublicKey(pubkey)
+
+		metadata := Metadata{
+			PubkeyHex:         pubkey,
+			PubkeyNpub:        npub,
+			Name:              metadataContent.Name,
+			DisplayName:       metadataContent.DisplayName,
+			About:             metadataContent.About,
+			Picture:           metadataContent.Picture,
+			Website:           metadataContent.Website,
+			Nip05:             metadataContent.Nip05,
+			Lud16:             metadataContent.Lud16,
+			MetadataUpdatedAt: evt.CreatedAt.Time(),
+			ContactsUpdatedAt: time.Unix(0, 0),
+		}
+
+		if err := DB.Create(&metadata).Error; err != nil {
+			TheLog.Printf("Error saving metadata to database: %v", err)
+		}
+	} else {
+		// Only update if the new event is newer
+		if existingMetadata.MetadataUpdatedAt.Before(evt.CreatedAt.Time()) {
+			updates := map[string]interface{}{
+				"name":                metadataContent.Name,
+				"display_name":        metadataContent.DisplayName,
+				"about":               metadataContent.About,
+				"picture":             metadataContent.Picture,
+				"website":             metadataContent.Website,
+				"nip05":               metadataContent.Nip05,
+				"lud16":               metadataContent.Lud16,
+				"metadata_updated_at": evt.CreatedAt.Time(),
+			}
+
+			if err := DB.Model(&Metadata{}).Where("pubkey_hex = ?", pubkey).Updates(updates).Error; err != nil {
+				TheLog.Printf("Error updating metadata in database: %v", err)
+			}
+		}
+	}
+
+	// Update the view with the new metadata
+	g.Update(func(g *gocui.Gui) error {
+		fetchResultsView, err := g.View("fetchresults")
+		if err != nil {
+			return err
+		}
+
+		// Query the database for the updated metadata
+		var metadata Metadata
+		if err := DB.Where("pubkey_hex = ?", pubkey).First(&metadata).Error; err != nil {
+			return nil
+		}
+
+		// Clear the view and redisplay the updated metadata
+		content := fetchResultsView.Buffer()
+		if strings.Contains(content, "PROFILE METADATA") {
+			// Get the view content up to the "PROFILE METADATA" line
+			lines := strings.Split(content, "\n")
+			fetchResultsView.Clear()
+
+			var newContent []string
+			var foundMetadataSection bool
+			var skipLines bool
+
+			for _, line := range lines {
+				if strings.Contains(line, "===== PROFILE METADATA =====") {
+					foundMetadataSection = true
+					newContent = append(newContent, line)
+					continue
 				}
-				
-				if dmRelaysFound {
-					fmt.Fprintf(fetchResultsView, "\nUpdated DM relay list from outbox relays.\n")
+
+				if foundMetadataSection && !skipLines {
+					if strings.HasPrefix(line, "Name:") ||
+						strings.HasPrefix(line, "Display Name:") ||
+						strings.HasPrefix(line, "About:") ||
+						strings.HasPrefix(line, "NIP-05:") ||
+						strings.HasPrefix(line, "Website:") ||
+						strings.HasPrefix(line, "Lightning Address:") ||
+						strings.HasPrefix(line, "Total Follows:") ||
+						strings.HasPrefix(line, "Last Updated:") {
+						continue
+					}
+
+					if strings.Contains(line, "=====") {
+						skipLines = true
+					}
+				}
+
+				if !foundMetadataSection || skipLines {
+					newContent = append(newContent, line)
 				}
 			}
-			
+
+			for _, line := range newContent {
+				fmt.Fprintln(fetchResultsView, line)
+			}
+		} else {
+			// If no metadata section exists, add it
+			fmt.Fprintf(fetchResultsView, "\n===== PROFILE METADATA =====\n")
+		}
+
+		// Display the updated metadata
+		fmt.Fprintf(fetchResultsView, "Name: %s\n", metadata.Name)
+		fmt.Fprintf(fetchResultsView, "Display Name: %s\n", metadata.DisplayName)
+		fmt.Fprintf(fetchResultsView, "About: %s\n", metadata.About)
+		fmt.Fprintf(fetchResultsView, "NIP-05: %s\n", metadata.Nip05)
+		fmt.Fprintf(fetchResultsView, "Website: %s\n", metadata.Website)
+		fmt.Fprintf(fetchResultsView, "Lightning Address: %s\n", metadata.Lud16)
+		fmt.Fprintf(fetchResultsView, "Total Follows: %d\n", metadata.TotalFollows)
+		fmt.Fprintf(fetchResultsView, "Last Updated: %s\n", metadata.MetadataUpdatedAt.Format("2006-01-02 15:04:05"))
+
+		return nil
+	})
+}
+
+func processDMRelayListEvent(g *gocui.Gui, evt *nostr.Event, pubkey string) {
+	if evt == nil || evt.Kind != 10050 {
+		return
+	}
+
+	TheLog.Printf("Processing DM relay list event with %d tags", len(evt.Tags))
+
+	// Clear existing DM relay list for this pubkey
+	DB.Where("pubkey_hex = ?", pubkey).Delete(&DMRelay{})
+
+	for _, tag := range evt.Tags {
+		if len(tag) >= 2 && tag[0] == "relay" {
+			relayUrl := tag[1]
+
+			// Create a new DM relay list entry
+			dmRelay := DMRelay{
+				PubkeyHex: pubkey,
+				Url:       relayUrl,
+			}
+
+			// Save to database
+			if err := DB.Create(&dmRelay).Error; err != nil {
+				TheLog.Printf("Error saving DM relay to database: %v", err)
+			}
+		}
+	}
+
+	// Update the view with the DM relay list
+	g.Update(func(g *gocui.Gui) error {
+		fetchResultsView, err := g.View("fetchresults")
+		if err != nil {
+			return err
+		}
+
+		// Query the database for the updated DM relay list
+		var dmRelays []DMRelay
+		DB.Where("pubkey_hex = ?", pubkey).Find(&dmRelays)
+
+		// Clear any existing DM relay list section
+		content := fetchResultsView.Buffer()
+		if strings.Contains(content, "DM RELAY LIST") {
+			lines := strings.Split(content, "\n")
+			fetchResultsView.Clear()
+
+			var newContent []string
+			var foundDMSection bool
+			var skipLines bool
+
+			for _, line := range lines {
+				if strings.Contains(line, "===== DM RELAY LIST =====") {
+					foundDMSection = true
+					continue
+				}
+
+				if foundDMSection && !skipLines {
+					if strings.HasPrefix(line, "  ") { // Relay entries start with two spaces
+						continue
+					}
+
+					if strings.Contains(line, "=====") || strings.Contains(line, "Fetching") || strings.Contains(line, "Press ESC") {
+						skipLines = false
+						foundDMSection = false
+					}
+				}
+
+				newContent = append(newContent, line)
+			}
+
+			for _, line := range newContent {
+				fmt.Fprintln(fetchResultsView, line)
+			}
+		}
+
+		if len(dmRelays) == 0 {
+			fmt.Fprintf(fetchResultsView, "\n===== DM RELAY LIST =====\n")
+			fmt.Fprintf(fetchResultsView, "  None\n")
 			return nil
-		})
-	}()
+		}
+
+		fmt.Fprintf(fetchResultsView, "\n===== DM RELAY LIST =====\n")
+		for _, relay := range dmRelays {
+			fmt.Fprintf(fetchResultsView, "  %s\n", relay.Url)
+		}
+
+		return nil
+	})
 }
 
 func processRelayListEvent(g *gocui.Gui, evt *nostr.Event, pubkey string) {
@@ -699,7 +908,6 @@ func processRelayListEvent(g *gocui.Gui, evt *nostr.Event, pubkey string) {
 			}
 
 			fmt.Fprintf(fetchResultsView, "\nNo valid relay tags found in the event.\n")
-			fmt.Fprintf(fetchResultsView, "Raw event: %+v\n", evt)
 			return nil
 		})
 		return
@@ -712,17 +920,37 @@ func processRelayListEvent(g *gocui.Gui, evt *nostr.Event, pubkey string) {
 			return err
 		}
 
-		// First clear any "Fetching relay list..." message
+		// Clear any existing relay list section
 		content := fetchResultsView.Buffer()
-		if strings.Contains(content, "Fetching relay list...") {
-			// Get the view content up to the "Fetching relay list..." line
+		if strings.Contains(content, "RELAY LIST") {
 			lines := strings.Split(content, "\n")
 			fetchResultsView.Clear()
 
+			var newContent []string
+			var foundRelaySection bool
+			var skipLines bool
+
 			for _, line := range lines {
-				if strings.Contains(line, "Fetching relay list...") {
-					break
+				if strings.Contains(line, "===== RELAY LIST =====") {
+					foundRelaySection = true
+					continue
 				}
+
+				if foundRelaySection && !skipLines {
+					if strings.HasPrefix(line, "  ") { // Relay entries start with two spaces
+						continue
+					}
+
+					if strings.Contains(line, "=====") || strings.Contains(line, "Fetching") || strings.Contains(line, "Press ESC") {
+						skipLines = false
+						foundRelaySection = false
+					}
+				}
+
+				newContent = append(newContent, line)
+			}
+
+			for _, line := range newContent {
 				fmt.Fprintln(fetchResultsView, line)
 			}
 		}
@@ -732,11 +960,12 @@ func processRelayListEvent(g *gocui.Gui, evt *nostr.Event, pubkey string) {
 		DB.Where("pubkey_hex = ?", pubkey).Find(&relays)
 
 		if len(relays) == 0 {
-			fmt.Fprintf(fetchResultsView, "\nNo relays found in the relay list.\n")
+			fmt.Fprintf(fetchResultsView, "\n===== RELAY LIST =====\n")
+			fmt.Fprintf(fetchResultsView, "  None\n")
 			return nil
 		}
 
-		fmt.Fprintf(fetchResultsView, "\nRelay List:\n")
+		fmt.Fprintf(fetchResultsView, "\n===== RELAY LIST =====\n")
 		for _, relay := range relays {
 			readStr := "✓"
 			writeStr := "✓"
@@ -749,158 +978,6 @@ func processRelayListEvent(g *gocui.Gui, evt *nostr.Event, pubkey string) {
 			fmt.Fprintf(fetchResultsView, "  %s [Read: %s, Write: %s]\n", relay.Url, readStr, writeStr)
 		}
 
-		fmt.Fprintf(fetchResultsView, "\nPress ESC to close this view\n")
-		return nil
-	})
-}
-
-func processMetadataEvent(g *gocui.Gui, evt *nostr.Event) {
-	if evt == nil || evt.Kind != 0 {
-		return
-	}
-	
-	TheLog.Printf("Processing metadata event: %s", evt.Content)
-	
-	// Parse the metadata from the event
-	var metadataContent struct {
-		Name        string `json:"name"`
-		DisplayName string `json:"display_name"`
-		About       string `json:"about"`
-		Picture     string `json:"picture"`
-		Website     string `json:"website"`
-		Nip05       string `json:"nip05"`
-		Lud16       string `json:"lud16"`
-	}
-	
-	if err := json.Unmarshal([]byte(evt.Content), &metadataContent); err != nil {
-		TheLog.Printf("Error parsing metadata: %v", err)
-		return
-	}
-	
-	// Check if we already have this metadata
-	var existingMetadata Metadata
-	result := DB.Where("pubkey_hex = ?", evt.PubKey).First(&existingMetadata)
-	
-	if result.Error != nil {
-		// Create new metadata
-		npub, _ := nip19.EncodePublicKey(evt.PubKey)
-		
-		metadata := Metadata{
-			PubkeyHex:         evt.PubKey,
-			PubkeyNpub:        npub,
-			Name:              metadataContent.Name,
-			DisplayName:       metadataContent.DisplayName,
-			About:             metadataContent.About,
-			Picture:           metadataContent.Picture,
-			Website:           metadataContent.Website,
-			Nip05:             metadataContent.Nip05,
-			Lud16:             metadataContent.Lud16,
-			MetadataUpdatedAt: evt.CreatedAt.Time(),
-			ContactsUpdatedAt: time.Unix(0, 0),
-		}
-		
-		if err := DB.Create(&metadata).Error; err != nil {
-			TheLog.Printf("Error saving metadata to database: %v", err)
-		}
-	} else {
-		// Only update if the new event is newer
-		if existingMetadata.MetadataUpdatedAt.Before(evt.CreatedAt.Time()) {
-			updates := map[string]interface{}{
-				"name":                metadataContent.Name,
-				"display_name":        metadataContent.DisplayName,
-				"about":               metadataContent.About,
-				"picture":             metadataContent.Picture,
-				"website":             metadataContent.Website,
-				"nip05":               metadataContent.Nip05,
-				"lud16":               metadataContent.Lud16,
-				"metadata_updated_at": evt.CreatedAt.Time(),
-			}
-			
-			if err := DB.Model(&Metadata{}).Where("pubkey_hex = ?", evt.PubKey).Updates(updates).Error; err != nil {
-				TheLog.Printf("Error updating metadata in database: %v", err)
-			}
-		}
-	}
-	
-	// Update the view with the new metadata
-	g.Update(func(g *gocui.Gui) error {
-		fetchResultsView, err := g.View("fetchresults")
-		if err != nil {
-			return err
-		}
-		
-		// Query the database for the updated metadata
-		var metadata Metadata
-		if err := DB.Where("pubkey_hex = ?", evt.PubKey).First(&metadata).Error; err != nil {
-			return nil
-		}
-		
-		// Clear the view and redisplay the updated metadata
-		content := fetchResultsView.Buffer()
-		if strings.Contains(content, "Name:") {
-			// Get the view content up to the "Name:" line
-			lines := strings.Split(content, "\n")
-			fetchResultsView.Clear()
-			
-			var newContent []string
-			for i, line := range lines {
-				if strings.HasPrefix(line, "Name:") {
-					// Add all lines before "Name:"
-					newContent = append(newContent, lines[:i]...)
-					break
-				}
-			}
-			
-			for _, line := range newContent {
-				fmt.Fprintln(fetchResultsView, line)
-			}
-		}
-		
-		// Display the updated metadata
-		fmt.Fprintf(fetchResultsView, "Name: %s\n", metadata.Name)
-		fmt.Fprintf(fetchResultsView, "Display Name: %s\n", metadata.DisplayName)
-		fmt.Fprintf(fetchResultsView, "About: %s\n", metadata.About)
-		fmt.Fprintf(fetchResultsView, "NIP-05: %s\n", metadata.Nip05)
-		fmt.Fprintf(fetchResultsView, "Website: %s\n", metadata.Website)
-		fmt.Fprintf(fetchResultsView, "Lightning Address: %s\n", metadata.Lud16)
-		fmt.Fprintf(fetchResultsView, "Total Follows: %d\n", metadata.TotalFollows)
-		fmt.Fprintf(fetchResultsView, "Last Updated: %s\n", metadata.MetadataUpdatedAt.Format("2006-01-02 15:04:05"))
-		
-		return nil
-	})
-}
-
-func processDMRelayListEvent(g *gocui.Gui, evt *nostr.Event, pubkey string) {
-	if evt == nil || evt.Kind != 10050 {
-		return
-	}
-	
-	TheLog.Printf("Processing DM relay list event with %d tags", len(evt.Tags))
-	
-	// According to Nostr standards, DM relay lists are stored in "relay" tags
-	foundRelays := false
-	
-	// Update the view with the DM relay list
-	g.Update(func(g *gocui.Gui) error {
-		fetchResultsView, err := g.View("fetchresults")
-		if err != nil {
-			return err
-		}
-		
-		fmt.Fprintf(fetchResultsView, "\nDM Relay List:\n")
-		
-		for _, tag := range evt.Tags {
-			if len(tag) >= 2 && tag[0] == "relay" {
-				relayUrl := tag[1]
-				fmt.Fprintf(fetchResultsView, "  %s\n", relayUrl)
-				foundRelays = true
-			}
-		}
-		
-		if !foundRelays {
-			fmt.Fprintf(fetchResultsView, "  No DM relays found\n")
-		}
-		
 		return nil
 	})
 }
@@ -1041,17 +1118,15 @@ func cancelInput(g *gocui.Gui, v *gocui.View) error {
 	NoticeColor := "\033[1;36m%s\033[0m"
 	s := fmt.Sprintf("(%s)earch", fmt.Sprintf(NoticeColor, "S"))
 	q := fmt.Sprintf("(%s)uit", fmt.Sprintf(NoticeColor, "Q"))
-	r := fmt.Sprintf("(%s)efresh", fmt.Sprintf(NoticeColor, "R"))
+	f := fmt.Sprintf("(%s)efresh", fmt.Sprintf(NoticeColor, "R"))
 	t := fmt.Sprintf("(%s)next window", fmt.Sprintf(NoticeColor, "TAB"))
 	a := fmt.Sprintf("(%s)dd relay", fmt.Sprintf(NoticeColor, "A"))
 
-	fmt.Fprintf(v5, "%-30s%-30s%-30s%-30s%-30s\n", s, q, r, t, a)
+	fmt.Fprintf(v5, "%-30s%-30s%-30s%-30s%-30s\n", s, q, f, t, a)
 	z := fmt.Sprintf("(%s)Select ALL", fmt.Sprintf(NoticeColor, "Z"))
 	d := fmt.Sprintf("(%s)elete relay", fmt.Sprintf(NoticeColor, "D"))
 	c := fmt.Sprintf("(%s)onfigure keys", fmt.Sprintf(NoticeColor, "C"))
-	fe := fmt.Sprintf("(%s)etch person", fmt.Sprintf(NoticeColor, "F"))
-	p := fmt.Sprintf("(%s)ubkey lookup", fmt.Sprintf(NoticeColor, "P"))
-	fmt.Fprintf(v5, "%-30s%-30s%-30s%-30s%-30s\n\n", z, d, c, fe, p)
+	fmt.Fprintf(v5, "%-30s%-30s%-30s\n\n", z, d, c)
 
 	g.DeleteKeybinding("v5", gocui.KeyEnter, gocui.ModNone)
 	g.SetCurrentView("v2")
