@@ -103,6 +103,9 @@ func keybindings(g *gocui.Gui) error {
 	if err := g.SetKeybinding("msg", gocui.KeyEnter, gocui.ModNone, doSearch); err != nil {
 		log.Panicln(err)
 	}
+	if err := g.SetKeybinding("msg", gocui.KeyEsc, gocui.ModNone, cancelSearch); err != nil {
+		log.Panicln(err)
+	}
 
 	/* fetch view */
 	// rune for "f"

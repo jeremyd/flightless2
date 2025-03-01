@@ -86,24 +86,9 @@ func layout(g *gocui.Gui) error {
 		v.BgColor = uiColorBg
 		v.FgColor = uiColorFg
 		v.FrameColor = uiColorFrame
-		v.Clear()
-		NoticeColor := "\033[1;36m%s\033[0m"
-		s := fmt.Sprintf("(%s)earch", fmt.Sprintf(NoticeColor, "S"))
-		q := fmt.Sprintf("(%s)uit", fmt.Sprintf(NoticeColor, "Q"))
-		r := fmt.Sprintf("(%s)efresh", fmt.Sprintf(NoticeColor, "R"))
-		t := fmt.Sprintf("(%s)next window", fmt.Sprintf(NoticeColor, "TAB"))
-		a := fmt.Sprintf("(%s)dd relay", fmt.Sprintf(NoticeColor, "A"))
-		w := fmt.Sprintf("(%s)write note", fmt.Sprintf(NoticeColor, "ENTER"))
-
-		fmt.Fprintf(v, "%-30s%-30s%-30s%-30s%-30s%-30s\n", s, q, r, t, a, w)
-		z := fmt.Sprintf("(%s)ap", fmt.Sprintf(NoticeColor, "Z"))
-		d := fmt.Sprintf("(%s)elete relay", fmt.Sprintf(NoticeColor, "D"))
-		c := fmt.Sprintf("(%s)onfigure keys", fmt.Sprintf(NoticeColor, "C"))
-		fe := fmt.Sprintf("(%s)etch person", fmt.Sprintf(NoticeColor, "F"))
-		p := fmt.Sprintf("(%s)ubkey lookup", fmt.Sprintf(NoticeColor, "P"))
-		tt := fmt.Sprintf("(%s)oggle view", fmt.Sprintf(NoticeColor, "T"))
-		fmt.Fprintf(v, "%-30s%-30s%-30s%-30s%-30s%-30s\n\n", z, d, c, fe, p, tt)
-
+		
+		// Initialize keybinds view
+		updateKeybindsView(g)
 	}
 
 	return nil

@@ -42,18 +42,7 @@ func wrapText(text string, width int) string {
 }
 
 func refreshAll(g *gocui.Gui, v *gocui.View) error {
-	if v2MetaDisplay == 0 {
-		refreshV2Conversations(g, v)
-	} else if v2MetaDisplay == 2 {
-		refreshV2Follows(g, v)
-	} else {
-		refreshV2(g, v)
-	}
-	v2, _ := g.View("v2")
-	_, cy := v2.Cursor()
-	refreshV3(g, cy)
-	refreshV4(g, cy)
-	return nil
+	return refreshAllViews(g, v)
 }
 
 func refreshV2Conversations(g *gocui.Gui, v *gocui.View) error {
@@ -160,13 +149,14 @@ func refreshV2(g *gocui.Gui, v *gocui.View) error {
 
 	if searchTerm != "" {
 		// Search in all records
-		if err := DB.Where("name LIKE ? OR nip05 LIKE ?", searchTerm, searchTerm).Find(&curFollows).Error; err != nil {
+		if err := DB.Where("name LIKE ? OR nip05 LIKE ? OR display_name LIKE ?", searchTerm, searchTerm, searchTerm).Find(&curFollows).Error; err != nil {
 			TheLog.Printf("error querying for all metadata: %s", err)
 		}
-		v2.Title = fmt.Sprintf("Pubkey navigator - search results: %s (%d)", strings.Trim(searchTerm, "%"), len(curFollows))
+		searchTermTrimmed := strings.Trim(searchTerm, "%")
+		v2.Title = fmt.Sprintf("Pubkey navigator - search results: %s (%d)", searchTermTrimmed, len(curFollows))
 	} else {
 		// Get all records
-		if err := DB.Model(&m).Find(&curFollows).Error; err != nil {
+		if err := DB.Find(&curFollows).Error; err != nil {
 			TheLog.Printf("error querying for all metadata: %s", err)
 		}
 		v2.Title = fmt.Sprintf("Pubkey navigator - all records (%d)", len(curFollows))
@@ -224,9 +214,9 @@ func refreshV2Follows(g *gocui.Gui, v *gocui.View) error {
 
 	var curFollows []Metadata
 
-	// Get follows
 	if searchTerm != "" {
-		// Get all follows first
+		// Search in follows
+		searchTermTrimmed := strings.Trim(searchTerm, "%")
 		var follows []Metadata
 		assocError := DB.Model(&m).Association("Follows").Find(&follows)
 		if assocError != nil {
@@ -235,10 +225,10 @@ func refreshV2Follows(g *gocui.Gui, v *gocui.View) error {
 		}
 
 		// Then filter by search term
-		searchTermTrimmed := strings.Trim(searchTerm, "%")
 		for _, follow := range follows {
 			if strings.Contains(strings.ToLower(follow.Name), strings.ToLower(searchTermTrimmed)) ||
-				strings.Contains(strings.ToLower(follow.Nip05), strings.ToLower(searchTermTrimmed)) {
+				strings.Contains(strings.ToLower(follow.Nip05), strings.ToLower(searchTermTrimmed)) ||
+				strings.Contains(strings.ToLower(follow.DisplayName), strings.ToLower(searchTermTrimmed)) {
 				curFollows = append(curFollows, follow)
 			}
 		}
@@ -265,7 +255,7 @@ func refreshV2Follows(g *gocui.Gui, v *gocui.View) error {
 	// Use filtered follows if available
 	if len(v2MetaFiltered) > 0 {
 		v2Meta = v2MetaFiltered
-		v2.Title = fmt.Sprintf("%s (: %d)", v2.Title, len(v2MetaFiltered))
+		v2.Title = fmt.Sprintf("%s (filtered by has DM relays: %d)", v2.Title, len(v2MetaFiltered))
 	} else {
 		v2Meta = curFollows
 	}
@@ -401,6 +391,64 @@ func refreshV5(g *gocui.Gui, cursor int) error {
 	v5.Editor = &messageEditor{gui: g}
 	g.Cursor = true
 	g.SetCurrentView("v5")
+
+	return nil
+}
+
+// updateKeybindsView updates the keybinds view (v5) with the current keybinds
+func updateKeybindsView(g *gocui.Gui) error {
+	v5, err := g.View("v5")
+	if err != nil {
+		return err
+	}
+
+	v5.Clear()
+	NoticeColor := "\033[1;36m%s\033[0m"
+
+	// First row of keybinds
+	s := fmt.Sprintf("(%s)earch", fmt.Sprintf(NoticeColor, "S"))
+	q := fmt.Sprintf("(%s)uit", fmt.Sprintf(NoticeColor, "Q"))
+	r := fmt.Sprintf("(%s)efresh", fmt.Sprintf(NoticeColor, "R"))
+	t := fmt.Sprintf("(%s)next window", fmt.Sprintf(NoticeColor, "TAB"))
+	a := fmt.Sprintf("(%s)dd relay", fmt.Sprintf(NoticeColor, "A"))
+	w := fmt.Sprintf("(%s)write note", fmt.Sprintf(NoticeColor, "ENTER"))
+
+	fmt.Fprintf(v5, "%-30s%-30s%-30s%-30s%-30s%-30s\n", s, q, r, t, a, w)
+
+	// Second row of keybinds
+	z := fmt.Sprintf("(%s)ap", fmt.Sprintf(NoticeColor, "Z"))
+	d := fmt.Sprintf("(%s)elete relay", fmt.Sprintf(NoticeColor, "D"))
+	c := fmt.Sprintf("(%s)onfigure keys", fmt.Sprintf(NoticeColor, "C"))
+	fe := fmt.Sprintf("(%s)etch person", fmt.Sprintf(NoticeColor, "F"))
+	p := fmt.Sprintf("(%s)ubkey lookup", fmt.Sprintf(NoticeColor, "P"))
+	tt := fmt.Sprintf("(%s)oggle view", fmt.Sprintf(NoticeColor, "T"))
+
+	fmt.Fprintf(v5, "%-30s%-30s%-30s%-30s%-30s%-30s\n\n", z, d, c, fe, p, tt)
+
+	return nil
+}
+
+// refreshAllViews refreshes all views (v2, v3, v4, and keybinds)
+func refreshAllViews(g *gocui.Gui, v *gocui.View) error {
+	// Refresh v2 based on current display mode
+	if v2MetaDisplay == 0 {
+		refreshV2Conversations(g, v)
+	} else if v2MetaDisplay == 2 {
+		refreshV2Follows(g, v)
+	} else {
+		refreshV2(g, v)
+	}
+
+	// Get current cursor position in v2
+	v2, _ := g.View("v2")
+	_, cy := v2.Cursor()
+
+	// Refresh v3 and v4 with current cursor position
+	refreshV3(g, cy)
+	refreshV4(g, cy)
+
+	// Update keybinds view
+	updateKeybindsView(g)
 
 	return nil
 }

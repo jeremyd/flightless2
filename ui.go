@@ -77,7 +77,7 @@ func quit(g *gocui.Gui, v *gocui.View) error {
 
 	// Clear the global GUI instance
 	TheGui = nil
-	
+
 	p.Signal(syscall.SIGTERM)
 	return nil
 }
@@ -153,7 +153,7 @@ func search(g *gocui.Gui, v *gocui.View) error {
 		if !errors.Is(err, gocui.ErrUnknownView) {
 			return err
 		}
-		v.Title = "Search"
+		v.Title = "Search - [Enter] to confirm, [Esc] to cancel"
 		v.Editable = true
 		v.KeybindOnEdit = true
 		v.Clear()
@@ -167,32 +167,34 @@ func search(g *gocui.Gui, v *gocui.View) error {
 
 func doSearch(g *gocui.Gui, v *gocui.View) error {
 	followSearch = false
+	// default to search view if it's in conversations
+	if v2MetaDisplay == 0 {
+		v2MetaDisplay = 1
+	}
 	// zero out the highlighted list
 	CurrOffset = 0
-	msg, eM := g.View("msg")
-	if eM != nil {
-		return nil
-	}
-	searchTerm = "%" + strings.TrimSpace(msg.Buffer()) + "%"
-	if searchTerm == "%%" {
+
+	// Get search term from input
+	searchInput := strings.TrimSpace(v.Buffer())
+
+	// Format search term for SQL LIKE query
+	if searchInput == "" {
+		// If search is empty, clear the search term to show all results
 		searchTerm = ""
+	} else {
+		searchTerm = "%" + searchInput + "%"
 	}
+
+	// Close search dialog
 	if err := g.DeleteView("msg"); err != nil {
 		return err
 	}
 	if _, err := g.SetCurrentView("v2"); err != nil {
 		return err
 	}
-	if v2MetaDisplay == 0 {
-		refreshV2Conversations(g, v)
-	} else if v2MetaDisplay == 1 {
-		refreshV2(g, v)
-	} else if v2MetaDisplay == 2 {
-		refreshV2Follows(g, v)
-	}
-	refreshV3(g, 0)
-	refreshV4(g, 0)
-	return nil
+
+	// Use the refreshAllViews function to refresh all views with search results
+	return refreshAllViews(g, v)
 }
 
 func fetch(g *gocui.Gui, v *gocui.View) error {
@@ -1033,18 +1035,16 @@ func toggleConversationFollows(g *gocui.Gui, v *gocui.View) error {
 	if v2MetaDisplay == 0 {
 		// Switch from conversations to all records
 		v2MetaDisplay = 1
-		refreshV2(g, v)
 	} else if v2MetaDisplay == 1 {
 		// Switch from all records to follows only
 		v2MetaDisplay = 2
-		refreshV2Follows(g, v)
 	} else {
 		// Switch from follows only back to conversations
 		v2MetaDisplay = 0
-		refreshV2Conversations(g, v)
 	}
 
-	return nil
+	// Refresh all views with the new display mode
+	return refreshAllViews(g, v)
 }
 
 func cancelFetchPubkey(g *gocui.Gui, v *gocui.View) error {
@@ -1281,16 +1281,6 @@ func cursorDownV2(g *gocui.Gui, v *gocui.View) error {
 		cx, cy := v.Cursor()
 		_, vSizeY := v.Size()
 
-		// Check if we're at the end of the list
-		totalItems := len(v2Meta)
-		if followSearch {
-			totalItems = len(followPages)
-		}
-
-		if (cy + CurrOffset + 1) >= totalItems {
-			return nil
-		}
-
 		// Clear current highlight
 		v.SetHighlight(cy, false)
 
@@ -1302,15 +1292,12 @@ func cursorDownV2(g *gocui.Gui, v *gocui.View) error {
 				}
 			}
 			CurrOffset += (vSizeY - 1)
-			if v2MetaDisplay == 0 {
-				refreshV2Conversations(g, v)
-			} else if v2MetaDisplay == 1 {
-				refreshV2(g, v)
-			} else if v2MetaDisplay == 2 {
-				refreshV2Follows(g, v)
-			}
+
+			// Refresh all views with the updated offset
+			refreshAllViews(g, v)
+
+			// Set highlight on first item
 			v.SetHighlight(0, true)
-			refreshV3(g, 0)
 			return nil
 		}
 
@@ -1322,6 +1309,8 @@ func cursorDownV2(g *gocui.Gui, v *gocui.View) error {
 			}
 		}
 		v.SetHighlight(cy+1, true)
+
+		// Refresh v3 and v4 with the new cursor position
 		refreshV3(g, cy+1)
 		refreshV4(g, cy+1)
 	}
@@ -1348,13 +1337,9 @@ func cursorUpV2(g *gocui.Gui, v *gocui.View) error {
 				newOffset = CurrOffset - (vSizeY - 1)
 			}
 			CurrOffset = newOffset
-			if v2MetaDisplay == 0 {
-				refreshV2Conversations(g, v)
-			} else if v2MetaDisplay == 1 {
-				refreshV2(g, v)
-			} else if v2MetaDisplay == 2 {
-				refreshV2Follows(g, v)
-			}
+
+			// Refresh all views with the updated offset
+			refreshAllViews(g, v)
 
 			// Move cursor to bottom of view unless we're at the start
 			newY := vSizeY - 2
@@ -1365,6 +1350,8 @@ func cursorUpV2(g *gocui.Gui, v *gocui.View) error {
 				}
 			}
 			v.SetHighlight(newY, true)
+
+			// Refresh v3 with the new cursor position
 			refreshV3(g, newY)
 			return nil
 		}
@@ -1375,9 +1362,10 @@ func cursorUpV2(g *gocui.Gui, v *gocui.View) error {
 			if err := v.SetOrigin(ox, oy-1); err != nil {
 				return err
 			}
-		} else {
 		}
 		v.SetHighlight(cy-1, true)
+
+		// Refresh v3 and v4 with the new cursor position
 		refreshV3(g, cy-1)
 		refreshV4(g, cy-1)
 	}
@@ -1432,7 +1420,7 @@ func activateConfig(
 	}
 	// Clear the subscriptions array
 	nostrSubs = []*nostr.Subscription{}
-	
+
 	// Kick off DM relay subscriptions for the new key
 	TheLog.Printf("Starting DM relay subscriptions for pubkey: %s", accounts[cy].Pubkey)
 	go doDMRelays(DB, context.Background())
@@ -1765,6 +1753,16 @@ func delRelay(g *gocui.Gui, v *gocui.View) error {
 		}
 
 		TheLog.Printf("marked relay %s for deletion", relayUrl)
+	}
+	return nil
+}
+
+func cancelSearch(g *gocui.Gui, v *gocui.View) error {
+	if err := g.DeleteView("msg"); err != nil {
+		return err
+	}
+	if _, err := g.SetCurrentView("v2"); err != nil {
+		return err
 	}
 	return nil
 }
