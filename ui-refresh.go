@@ -13,7 +13,7 @@ import (
 // current page?
 var displayV2Meta []Metadata
 
-// 0 is the conversations results page, 1 is the search results page
+// 0 is the conversations results page, 1 is the search results page, 2 is the follows page
 var v2MetaDisplay = 0
 
 // wrapText wraps text to fit within a given width, preserving words
@@ -44,6 +44,8 @@ func wrapText(text string, width int) string {
 func refreshAll(g *gocui.Gui, v *gocui.View) error {
 	if v2MetaDisplay == 0 {
 		refreshV2Conversations(g, v)
+	} else if v2MetaDisplay == 2 {
+		refreshV2Follows(g, v)
 	} else {
 		refreshV2(g, v)
 	}
@@ -142,6 +144,156 @@ func refreshV2Conversations(g *gocui.Gui, v *gocui.View) error {
 	return nil
 }
 
+func refreshV2(g *gocui.Gui, v *gocui.View) error {
+	v2, err := g.View("v2")
+	if err != nil {
+		return err
+	}
+	v2.Clear()
+
+	var account Account
+	DB.First(&account, "active = ?", true)
+	var m Metadata
+	DB.First(&m, "pubkey_hex = ?", account.Pubkey)
+
+	var curFollows []Metadata
+
+	if searchTerm != "" {
+		// Search in all records
+		if err := DB.Where("name LIKE ? OR nip05 LIKE ?", searchTerm, searchTerm).Find(&curFollows).Error; err != nil {
+			TheLog.Printf("error querying for all metadata: %s", err)
+		}
+		v2.Title = fmt.Sprintf("Pubkey navigator - search results: %s (%d)", strings.Trim(searchTerm, "%"), len(curFollows))
+	} else {
+		// Get all records
+		if err := DB.Model(&m).Find(&curFollows).Error; err != nil {
+			TheLog.Printf("error querying for all metadata: %s", err)
+		}
+		v2.Title = fmt.Sprintf("Pubkey navigator - all records (%d)", len(curFollows))
+	}
+
+	// only display follows that have >0 DM relays
+	v2MetaFiltered := []Metadata{}
+	for _, follow := range curFollows {
+		dmRelayCount := DB.Model(&follow).Association("DMRelays").Count()
+		if dmRelayCount != 0 {
+			v2MetaFiltered = append(v2MetaFiltered, follow)
+		}
+	}
+
+	// sort by recent ChatMessages
+
+	v2Meta = curFollows
+
+	_, vSizeY := v2.Size()
+	maxDisplay := vSizeY - 1
+
+	// Calculate the slice of metadata to display based on current offset
+	endIdx := CurrOffset + maxDisplay
+	if endIdx > len(v2Meta) {
+		endIdx = len(v2Meta)
+	}
+	displayV2Meta = v2Meta[CurrOffset:endIdx]
+
+	// Display the metadata
+	for _, metadata := range displayV2Meta {
+		if metadata.Nip05 != "" {
+			fmt.Fprintf(v2, "%-30s %-30s\n", metadata.Name, metadata.Nip05)
+		} else if metadata.Name != "" {
+			fmt.Fprintf(v2, "%-30s\n", metadata.Name)
+		} else {
+			fmt.Fprintf(v2, "%-30s\n", metadata.PubkeyHex)
+		}
+	}
+
+	return nil
+}
+
+// refreshV2Follows displays only the follows in the v2 view
+func refreshV2Follows(g *gocui.Gui, v *gocui.View) error {
+	v2, err := g.View("v2")
+	if err != nil {
+		return err
+	}
+	v2.Clear()
+
+	var account Account
+	DB.First(&account, "active = ?", true)
+	var m Metadata
+	DB.First(&m, "pubkey_hex = ?", account.Pubkey)
+
+	var curFollows []Metadata
+
+	// Get follows
+	if searchTerm != "" {
+		// Get all follows first
+		var follows []Metadata
+		assocError := DB.Model(&m).Association("Follows").Find(&follows)
+		if assocError != nil {
+			TheLog.Printf("error getting follows for account: %s", assocError)
+			return nil
+		}
+
+		// Then filter by search term
+		searchTermTrimmed := strings.Trim(searchTerm, "%")
+		for _, follow := range follows {
+			if strings.Contains(strings.ToLower(follow.Name), strings.ToLower(searchTermTrimmed)) ||
+				strings.Contains(strings.ToLower(follow.Nip05), strings.ToLower(searchTermTrimmed)) {
+				curFollows = append(curFollows, follow)
+			}
+		}
+		v2.Title = fmt.Sprintf("Pubkey navigator - follows search: %s (%d)", searchTermTrimmed, len(curFollows))
+	} else {
+		// Get all follows
+		assocError := DB.Model(&m).Association("Follows").Find(&curFollows)
+		if assocError != nil {
+			TheLog.Printf("error getting follows for account: %s", assocError)
+			return nil
+		}
+		v2.Title = fmt.Sprintf("Pubkey navigator - follows (%d)", len(curFollows))
+	}
+
+	// only display follows that have >0 DM relays
+	v2MetaFiltered := []Metadata{}
+	for _, follow := range curFollows {
+		dmRelayCount := DB.Model(&follow).Association("DMRelays").Count()
+		if dmRelayCount != 0 {
+			v2MetaFiltered = append(v2MetaFiltered, follow)
+		}
+	}
+
+	// Use filtered follows if available
+	if len(v2MetaFiltered) > 0 {
+		v2Meta = v2MetaFiltered
+		v2.Title = fmt.Sprintf("%s (: %d)", v2.Title, len(v2MetaFiltered))
+	} else {
+		v2Meta = curFollows
+	}
+
+	_, vSizeY := v2.Size()
+	maxDisplay := vSizeY - 1
+
+	// Calculate the slice of metadata to display based on current offset
+	endIdx := CurrOffset + maxDisplay
+	if endIdx > len(v2Meta) {
+		endIdx = len(v2Meta)
+	}
+	displayV2Meta = v2Meta[CurrOffset:endIdx]
+
+	// Display the metadata
+	for _, metadata := range displayV2Meta {
+		if metadata.Nip05 != "" {
+			fmt.Fprintf(v2, "%-30s %-30s\n", metadata.Name, metadata.Nip05)
+		} else if metadata.Name != "" {
+			fmt.Fprintf(v2, "%-30s\n", metadata.Name)
+		} else {
+			fmt.Fprintf(v2, "%-30s\n", metadata.PubkeyHex)
+		}
+	}
+
+	return nil
+}
+
 func refreshV3(g *gocui.Gui, cy int) error {
 	v3, _ := g.View("v3")
 	v3.Clear()
@@ -190,92 +342,6 @@ func refreshV3(g *gocui.Gui, cy int) error {
 		}
 		v3.Write([]byte(buffer.String()))
 	}
-	return nil
-}
-
-func refreshV2(g *gocui.Gui, v *gocui.View) error {
-	v2MetaDisplay = 1
-	TheLog.Println("refreshing v2")
-	v2, _ := g.View("v2")
-	v2.Clear()
-
-	// get the active account pubkey
-	account := Account{}
-	DB.Where("active = ?", true).First(&account)
-	pubkey := account.Pubkey
-
-	var curFollows []Metadata
-	m := Metadata{}
-	DB.Where("pubkey_hex = ?", pubkey).First(&m)
-
-	// Handle search vs normal view
-	if searchTerm != "" {
-		// Search within follows
-		/*
-			if err := DB.Model(&m).Association("Follows").Find(&curFollows, "name LIKE ? OR nip05 LIKE ?", searchTerm, searchTerm); err != nil {
-				TheLog.Printf("error searching follows: %s", err)
-				return nil
-			}
-			v2.Title = fmt.Sprintf("follows search: %s (%d)", searchTerm, len(curFollows))
-		*/
-		if err := DB.Where("name LIKE ? OR nip05 LIKE ?", searchTerm, searchTerm).Find(&curFollows).Error; err != nil {
-			TheLog.Printf("error querying for all metadata: %s", err)
-		}
-		v2.Title = fmt.Sprintf("Pubkey navigator - search results: %s (%d)", searchTerm, len(curFollows))
-	} else {
-		// Get all follows
-		/*
-			assocError := DB.Model(&m).Association("Follows").Find(&curFollows)
-			if assocError != nil {
-				TheLog.Printf("error getting follows for account: %s", assocError)
-				return nil
-			}
-			v2.Title = fmt.Sprintf("all follows (%d)", len(curFollows))
-		*/
-		if err := DB.Model(&m).Find(&curFollows).Error; err != nil {
-			TheLog.Printf("error querying for all metadata: %s", err)
-		}
-		v2.Title = fmt.Sprintf("Pubkey navigator - all records (%d)", len(curFollows))
-	}
-
-	// only display follows that have >0 DM relays
-	v2MetaFiltered := []Metadata{}
-	for _, follow := range curFollows {
-		dmRelayCount := DB.Model(&follow).Association("DMRelays").Count()
-		if dmRelayCount != 0 {
-			v2MetaFiltered = append(v2MetaFiltered, follow)
-		}
-	}
-
-	// sort by recent ChatMessages
-
-	v2Meta = curFollows
-
-	_, vSizeY := v2.Size()
-	maxDisplay := vSizeY - 1
-
-	// Calculate the slice of metadata to display based on current offset
-	endIdx := CurrOffset + maxDisplay
-	if endIdx > len(v2Meta) {
-		endIdx = len(v2Meta)
-	}
-	displayV2Meta = v2Meta[CurrOffset:endIdx]
-
-	// Display the metadata
-	for _, metadata := range displayV2Meta {
-		if metadata.Nip05 != "" {
-			fmt.Fprintf(v2, "%-30s %-30s\n", metadata.Name, metadata.Nip05)
-		} else {
-			fmt.Fprintf(v2, "%-30s\n", metadata.Name)
-		}
-	}
-
-	// Reset cursor to first line if needed
-	if _, cy := v2.Cursor(); cy < 0 {
-		v2.SetCursor(0, 0)
-		v2.SetHighlight(0, true)
-	}
-
 	return nil
 }
 

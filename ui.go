@@ -183,7 +183,13 @@ func doSearch(g *gocui.Gui, v *gocui.View) error {
 	if _, err := g.SetCurrentView("v2"); err != nil {
 		return err
 	}
-	refreshV2(g, v)
+	if v2MetaDisplay == 0 {
+		refreshV2Conversations(g, v)
+	} else if v2MetaDisplay == 1 {
+		refreshV2(g, v)
+	} else if v2MetaDisplay == 2 {
+		refreshV2Follows(g, v)
+	}
 	refreshV3(g, 0)
 	refreshV4(g, 0)
 	return nil
@@ -1020,12 +1026,22 @@ func processRelayListEvent(g *gocui.Gui, evt *nostr.Event, pubkey string) {
 }
 
 func toggleConversationFollows(g *gocui.Gui, v *gocui.View) error {
-	if v2MetaDisplay == 1 {
-		v2MetaDisplay = 0
-		refreshV2Conversations(g, v)
-	} else {
+	// Cycle through the three display modes:
+	// 0: Conversations
+	// 1: All records
+	// 2: Follows only
+	if v2MetaDisplay == 0 {
+		// Switch from conversations to all records
 		v2MetaDisplay = 1
 		refreshV2(g, v)
+	} else if v2MetaDisplay == 1 {
+		// Switch from all records to follows only
+		v2MetaDisplay = 2
+		refreshV2Follows(g, v)
+	} else {
+		// Switch from follows only back to conversations
+		v2MetaDisplay = 0
+		refreshV2Conversations(g, v)
 	}
 
 	return nil
@@ -1288,8 +1304,10 @@ func cursorDownV2(g *gocui.Gui, v *gocui.View) error {
 			CurrOffset += (vSizeY - 1)
 			if v2MetaDisplay == 0 {
 				refreshV2Conversations(g, v)
-			} else {
+			} else if v2MetaDisplay == 1 {
 				refreshV2(g, v)
+			} else if v2MetaDisplay == 2 {
+				refreshV2Follows(g, v)
 			}
 			v.SetHighlight(0, true)
 			refreshV3(g, 0)
@@ -1334,6 +1352,8 @@ func cursorUpV2(g *gocui.Gui, v *gocui.View) error {
 				refreshV2Conversations(g, v)
 			} else if v2MetaDisplay == 1 {
 				refreshV2(g, v)
+			} else if v2MetaDisplay == 2 {
+				refreshV2Follows(g, v)
 			}
 
 			// Move cursor to bottom of view unless we're at the start

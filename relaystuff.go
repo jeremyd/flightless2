@@ -115,10 +115,8 @@ func UpdateOrCreateRelayStatus(db *gorm.DB, url string, status string) {
 	var s RelayStatus
 	err := db.Model(&s).Where("url = ?", url).First(&s).Error
 	if err == nil {
+		// Don't update if the relay is marked for deletion
 		if s.Status == "deleting" {
-			if err := db.Delete(&s); err != nil {
-				TheLog.Printf("error deleting relay status: %v\n", err)
-			}
 			return
 		} else {
 			db.Model(&r).Where("url = ?", url).Updates(&r)
@@ -652,22 +650,17 @@ func processSub(sub *nostr.Subscription, relay *nostr.Relay, pubkey string) {
 // refreshUIAfterNewMessage triggers a UI refresh for the conversation view
 // This function is called from a goroutine, so we need to use g.Update
 func refreshUIAfterNewMessage() {
-	TheLog.Println("Attempting to refresh UI after new message...")
+	TheLog.Println("Refreshing UI after new message")
 	
-	// Get the current GUI instance
-	if TheGui != nil {
-		TheLog.Println("GUI instance found, updating...")
-		
-		// Use a more direct approach - refresh immediately and then schedule another refresh
-		// after a short delay to ensure the DB transaction is complete
-		refreshNow()
-		
-		// Schedule another refresh after a short delay to ensure DB transaction is complete
+	// First refresh immediately
+	refreshNow()
+	
+	// Then schedule another refresh after a delay to ensure DB transaction is complete
+	go func() {
 		time.Sleep(500 * time.Millisecond)
+		TheLog.Println("Performing delayed refresh after new message")
 		refreshNow()
-	} else {
-		TheLog.Println("GUI instance is nil, cannot refresh UI")
-	}
+	}()
 }
 
 // Helper function to perform the actual refresh

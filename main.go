@@ -98,22 +98,35 @@ func main() {
 				if relayStatus.Status == "waiting" {
 					doRelay(DB, CTX, relayStatus.Url)
 				} else if relayStatus.Status == "deleting" {
+					TheLog.Printf("Processing relay marked for deletion: %s", relayStatus.Url)
 					foundit := false
-					for _, r := range nostrRelays {
+					for i, r := range nostrRelays {
 						if r.URL == relayStatus.Url {
+							TheLog.Printf("Found relay to delete: %s", r.URL)
 							err := DB.Delete(&relayStatus).Error
 							if err != nil {
-								fmt.Println(err)
+								TheLog.Printf("Error deleting relay status: %v", err)
+							} else {
+								TheLog.Printf("Successfully deleted relay status for: %s", relayStatus.Url)
 							}
 							foundit = true
 							r.Close()
+							TheLog.Printf("Closed relay connection: %s", r.URL)
+							
+							// Remove from nostrRelays slice
+							nostrRelays = append(nostrRelays[:i], nostrRelays[i+1:]...)
+							TheLog.Printf("Removed relay from nostrRelays slice")
+							break
 						}
 					}
 					// if we didn't find it, delete the record anyway
 					if !foundit {
+						TheLog.Printf("Relay connection not found, deleting record anyway: %s", relayStatus.Url)
 						err := DB.Delete(&relayStatus).Error
 						if err != nil {
-							fmt.Println(err)
+							TheLog.Printf("Error deleting relay status: %v", err)
+						} else {
+							TheLog.Printf("Successfully deleted relay status for: %s", relayStatus.Url)
 						}
 					}
 				}
