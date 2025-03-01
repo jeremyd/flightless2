@@ -1404,6 +1404,19 @@ func activateConfig(
 	DB.Model(&acct).Where("pubkey = ?", accounts[cy].Pubkey).Update("active", true)
 	DB.Model(&acct).Where("pubkey != ?", accounts[cy].Pubkey).Update("active", false)
 
+	// Close existing subscriptions
+	TheLog.Println("Closing existing subscriptions before switching keys")
+	for _, s := range nostrSubs {
+		s.Unsub()
+		s.Close()
+	}
+	// Clear the subscriptions array
+	nostrSubs = []*nostr.Subscription{}
+	
+	// Kick off DM relay subscriptions for the new key
+	TheLog.Printf("Starting DM relay subscriptions for pubkey: %s", accounts[cy].Pubkey)
+	go doDMRelays(DB, context.Background())
+
 	g.DeleteView("config")
 	g.SetCurrentView("v2")
 	v2, _ := g.View("v2")
