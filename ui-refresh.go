@@ -42,7 +42,11 @@ func wrapText(text string, width int) string {
 }
 
 func refreshAll(g *gocui.Gui, v *gocui.View) error {
-	refreshV2Conversations(g, v)
+	if v2MetaDisplay == 0 {
+		refreshV2Conversations(g, v)
+	} else {
+		refreshV2(g, v)
+	}
 	v2, _ := g.View("v2")
 	_, cy := v2.Cursor()
 	refreshV3(g, cy)
@@ -72,7 +76,7 @@ func refreshV2Conversations(g *gocui.Gui, v *gocui.View) error {
 
 	// print the pubkeys we have conversations with
 	newV2meta := []Metadata{}
-	v2.Title = "Pubkey navigator"
+	v2.Title = fmt.Sprintf("Pubkey navigator - active conversations (%d)", len(conversations))
 	for pubkey, _ := range conversations {
 		m := Metadata{}
 		if err := DB.First(&m, "pubkey_hex = ?", pubkey).Error; err != nil {
@@ -207,19 +211,31 @@ func refreshV2(g *gocui.Gui, v *gocui.View) error {
 	// Handle search vs normal view
 	if searchTerm != "" {
 		// Search within follows
-		if err := DB.Model(&m).Association("Follows").Find(&curFollows, "name LIKE ? OR nip05 LIKE ?", searchTerm, searchTerm); err != nil {
-			TheLog.Printf("error searching follows: %s", err)
-			return nil
+		/*
+			if err := DB.Model(&m).Association("Follows").Find(&curFollows, "name LIKE ? OR nip05 LIKE ?", searchTerm, searchTerm); err != nil {
+				TheLog.Printf("error searching follows: %s", err)
+				return nil
+			}
+			v2.Title = fmt.Sprintf("follows search: %s (%d)", searchTerm, len(curFollows))
+		*/
+		if err := DB.Where("name LIKE ? OR nip05 LIKE ?", searchTerm, searchTerm).Find(&curFollows).Error; err != nil {
+			TheLog.Printf("error querying for all metadata: %s", err)
 		}
-		v2.Title = fmt.Sprintf("follows search: %s (%d)", searchTerm, len(curFollows))
+		v2.Title = fmt.Sprintf("Pubkey navigator - search results: %s (%d)", searchTerm, len(curFollows))
 	} else {
 		// Get all follows
-		assocError := DB.Model(&m).Association("Follows").Find(&curFollows)
-		if assocError != nil {
-			TheLog.Printf("error getting follows for account: %s", assocError)
-			return nil
+		/*
+			assocError := DB.Model(&m).Association("Follows").Find(&curFollows)
+			if assocError != nil {
+				TheLog.Printf("error getting follows for account: %s", assocError)
+				return nil
+			}
+			v2.Title = fmt.Sprintf("all follows (%d)", len(curFollows))
+		*/
+		if err := DB.Model(&m).Find(&curFollows).Error; err != nil {
+			TheLog.Printf("error querying for all metadata: %s", err)
 		}
-		v2.Title = fmt.Sprintf("all follows (%d)", len(curFollows))
+		v2.Title = fmt.Sprintf("Pubkey navigator - all records (%d)", len(curFollows))
 	}
 
 	// only display follows that have >0 DM relays
