@@ -102,48 +102,6 @@ func next(g *gocui.Gui, v *gocui.View) error {
 	return nil
 }
 
-func config(g *gocui.Gui, v *gocui.View) error {
-	maxX, maxY := g.Size()
-	accounts := []Account{}
-	aerr := DB.Find(&accounts).Error
-	if aerr != nil {
-		TheLog.Printf("error getting accounts: %s", aerr)
-	}
-	if v, err := g.SetView("config", maxX/2-50, maxY/2-len(accounts), maxX/2+50, maxY/2+1, 0); err != nil {
-		if !errors.Is(err, gocui.ErrUnknownView) {
-			return err
-		}
-
-		theKey := ""
-		for _, acct := range accounts {
-			theKey = Decrypt(string(Password), acct.Privatekey)
-			if len(theKey) != 64 {
-				fmt.Fprintf(v, "invalid key.. delete please: %s", theKey)
-			} else {
-				activeNotice := ""
-				if acct.Active {
-					activeNotice = "*"
-				}
-				fmt.Fprintf(v, "%s[%s ... ] for %s\n", activeNotice, theKey[0:5], acct.PubkeyNpub)
-				// full priv key printing
-				//fmt.Fprintf(v, "[%s] for %s\n", theKey, acct.Pubkey)
-			}
-		}
-
-		v.Title = "Config Private Keys - [Enter]Use key - [ESC]Cancel - [n]ew key - [d]elete key - [g]enerate key - [p]rivate key reveal"
-		v.Highlight = true
-		v.SelBgColor = gocui.ColorGreen
-		v.SelFgColor = gocui.ColorBlack
-		v.Editable = false
-		v.KeybindOnEdit = true
-		if _, err := g.SetCurrentView("config"); err != nil {
-			TheLog.Println("error setting current view to config")
-			return nil
-		}
-	}
-	return nil
-}
-
 func search(g *gocui.Gui, v *gocui.View) error {
 	maxX, maxY := g.Size()
 	if v, err := g.SetView("msg", maxX/2-30, maxY/2, maxX/2+30, maxY/2+2, 0); err != nil {
@@ -446,6 +404,10 @@ func cursorDownV2(g *gocui.Gui, v *gocui.View) error {
 
 			// Set highlight on first item
 			v.SetHighlight(0, true)
+			return nil
+		}
+
+		if cy >= (len(displayV2Meta) - 1) {
 			return nil
 		}
 

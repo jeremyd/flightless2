@@ -10,6 +10,50 @@ import (
 	"github.com/nbd-wtf/go-nostr/nip19"
 )
 
+func config(g *gocui.Gui, v *gocui.View) error {
+	maxX, maxY := g.Size()
+	accounts := []Account{}
+	aerr := DB.Find(&accounts).Error
+	if aerr != nil {
+		TheLog.Printf("error getting accounts: %s", aerr)
+	}
+	if v, err := g.SetView("config", maxX/2-50, maxY/2-len(accounts), maxX/2+50, maxY/2+1, 0); err != nil {
+		if !errors.Is(err, gocui.ErrUnknownView) {
+			return err
+		}
+
+		theKey := ""
+		for _, acct := range accounts {
+			theKey = Decrypt(string(Password), acct.Privatekey)
+			if len(theKey) != 64 {
+				fmt.Fprintf(v, "invalid key.. delete please: %s", theKey)
+			} else {
+				activeNotice := ""
+				if acct.Active {
+					activeNotice = "*"
+				}
+				var m Metadata
+				DB.Where("pubkey_hex = ?", acct.Pubkey).First(&m)
+				fmt.Fprintf(v, "%s[%s] %s\n", activeNotice, m.Name, acct.PubkeyNpub)
+				// full priv key printing
+				//fmt.Fprintf(v, "[%s] for %s\n", theKey, acct.Pubkey)
+			}
+		}
+
+		v.Title = "Config Private Keys - [Enter]Use key - [ESC]Cancel - [n]ew key - [d]elete key - [g]enerate key - [p]rivate key reveal"
+		v.Highlight = true
+		v.SelBgColor = gocui.ColorGreen
+		v.SelFgColor = gocui.ColorBlack
+		v.Editable = false
+		v.KeybindOnEdit = true
+		if _, err := g.SetCurrentView("config"); err != nil {
+			TheLog.Println("error setting current view to config")
+			return nil
+		}
+	}
+	return nil
+}
+
 func configNew(
 	g *gocui.Gui,
 	v *gocui.View,

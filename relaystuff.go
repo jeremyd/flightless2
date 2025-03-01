@@ -631,7 +631,7 @@ func processSub(sub *nostr.Subscription, relay *nostr.Relay, pubkey string) {
 						TheLog.Printf("Error creating chat message: %v", err)
 					} else {
 						TheLog.Printf("Successfully created chat message from %s", m.FromPubkey)
-						
+
 						// Ensure we refresh the UI after saving the message
 						// Use a separate goroutine to avoid blocking the event processing
 						go func() {
@@ -651,10 +651,10 @@ func processSub(sub *nostr.Subscription, relay *nostr.Relay, pubkey string) {
 // This function is called from a goroutine, so we need to use g.Update
 func refreshUIAfterNewMessage() {
 	TheLog.Println("Refreshing UI after new message")
-	
+
 	// First refresh immediately
 	refreshNow()
-	
+
 	// Then schedule another refresh after a delay to ensure DB transaction is complete
 	go func() {
 		time.Sleep(500 * time.Millisecond)
@@ -672,38 +672,7 @@ func refreshNow() {
 			TheLog.Printf("Error getting v2 view: %v", err)
 			return err
 		}
-		
-		// Only refresh if we're in the conversation view
-		if v2MetaDisplay == 0 {
-			TheLog.Println("In conversation view, refreshing conversations...")
-			
-			// Get the current cursor position before refreshing
-			_, cy := v2.Cursor()
-			
-			// Refresh v2 (conversation list)
-			err := refreshV2Conversations(g, v2)
-			if err != nil {
-				TheLog.Printf("Error refreshing conversations: %v", err)
-				return err
-			}
-			
-			TheLog.Println("Successfully refreshed conversations")
-			
-			// Now refresh v3 (message view) with the current cursor position
-			if cy < len(displayV2Meta) {
-				TheLog.Printf("Refreshing v3 with cursor position %d", cy)
-				err = refreshV3(g, cy)
-				if err != nil {
-					TheLog.Printf("Error refreshing v3: %v", err)
-				} else {
-					TheLog.Println("Successfully refreshed v3")
-				}
-			} else {
-				TheLog.Printf("Cursor position %d is out of range for displayV2Meta (length %d)", cy, len(displayV2Meta))
-			}
-		} else {
-			TheLog.Println("Not in conversation view, skipping refresh")
-		}
+		refreshAllViews(g, v2)
 		return nil
 	})
 }
