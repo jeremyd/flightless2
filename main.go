@@ -16,6 +16,7 @@ var AppInfo = "flightless v2.0.0-pre"
 var TheLog *log.Logger
 var Password []byte
 var DB *gorm.DB
+var TheGui *gocui.Gui
 
 func main() {
 	DB = GetGormConnection()
@@ -80,6 +81,8 @@ func main() {
 		log.Panicln(err)
 	}
 	defer g.Close()
+
+	TheGui = g
 
 	g.SetManagerFunc(layout)
 	if err := keybindings(g); err != nil {

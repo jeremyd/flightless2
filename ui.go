@@ -47,12 +47,37 @@ func (e *messageEditor) Edit(v *gocui.View, key gocui.Key, ch rune, mod gocui.Mo
 }
 
 func quit(g *gocui.Gui, v *gocui.View) error {
-	p, err := os.FindProcess(os.Getpid())
+	maxX, maxY := g.Size()
 
-	if err != nil {
+	// Create a popup view with the exit message
+	if v, err := g.SetView("exitMsg", maxX/2-30, maxY/2-1, maxX/2+30, maxY/2+1, 0); err != nil {
+		if err != gocui.ErrUnknownView {
+			return err
+		}
+
+		v.Title = "exiting gracefully"
+		v.Wrap = true
+		fmt.Fprintln(v, "closing relay connections...")
+		g.Update(func(g *gocui.Gui) error {
+			return nil
+		})
+	}
+
+	// Set the current view to the exit message
+	if _, err := g.SetCurrentView("exitMsg"); err != nil {
 		return err
 	}
 
+	// Run the exit code immediately
+	p, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		TheLog.Println("Error finding process:", err)
+		return err
+	}
+
+	// Clear the global GUI instance
+	TheGui = nil
+	
 	p.Signal(syscall.SIGTERM)
 	return nil
 }

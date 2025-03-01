@@ -12,6 +12,7 @@ import (
 
 	"net/http"
 
+	"github.com/awesome-gocui/gocui"
 	"github.com/jeremyd/crusher17"
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/nbd-wtf/go-nostr/nip19"
@@ -94,6 +95,8 @@ func watchInterrupt() {
 			r.Close()
 			UpdateOrCreateRelayStatus(DB, r.URL, "connection error: app exit")
 		}
+		// Clear the global GUI instance
+		TheGui = nil
 		// give other relays time to close
 		time.Sleep(3 * time.Second)
 		os.Exit(0)
@@ -629,11 +632,85 @@ func processSub(sub *nostr.Subscription, relay *nostr.Relay, pubkey string) {
 					if err := DB.Create(&m).Error; err != nil {
 						TheLog.Printf("Error creating chat message: %v", err)
 					} else {
-						//TheLog.Printf("Received chat message from %s, content: %s", m.FromPubkey, m.Content)
+						TheLog.Printf("Successfully created chat message from %s", m.FromPubkey)
+						
+						// Ensure we refresh the UI after saving the message
+						// Use a separate goroutine to avoid blocking the event processing
+						go func() {
+							// Give a moment for the DB transaction to complete
+							time.Sleep(100 * time.Millisecond)
+							refreshUIAfterNewMessage()
+						}()
 					}
 				}
 			}
 		}
 	}
 
+}
+
+// refreshUIAfterNewMessage triggers a UI refresh for the conversation view
+// This function is called from a goroutine, so we need to use g.Update
+func refreshUIAfterNewMessage() {
+	TheLog.Println("Attempting to refresh UI after new message...")
+	
+	// Get the current GUI instance
+	if TheGui != nil {
+		TheLog.Println("GUI instance found, updating...")
+		
+		// Use a more direct approach - refresh immediately and then schedule another refresh
+		// after a short delay to ensure the DB transaction is complete
+		refreshNow()
+		
+		// Schedule another refresh after a short delay to ensure DB transaction is complete
+		time.Sleep(500 * time.Millisecond)
+		refreshNow()
+	} else {
+		TheLog.Println("GUI instance is nil, cannot refresh UI")
+	}
+}
+
+// Helper function to perform the actual refresh
+func refreshNow() {
+	TheGui.Update(func(g *gocui.Gui) error {
+		// Refresh the conversation view
+		v2, err := g.View("v2")
+		if err != nil {
+			TheLog.Printf("Error getting v2 view: %v", err)
+			return err
+		}
+		
+		// Only refresh if we're in the conversation view
+		if v2MetaDisplay == 0 {
+			TheLog.Println("In conversation view, refreshing conversations...")
+			
+			// Get the current cursor position before refreshing
+			_, cy := v2.Cursor()
+			
+			// Refresh v2 (conversation list)
+			err := refreshV2Conversations(g, v2)
+			if err != nil {
+				TheLog.Printf("Error refreshing conversations: %v", err)
+				return err
+			}
+			
+			TheLog.Println("Successfully refreshed conversations")
+			
+			// Now refresh v3 (message view) with the current cursor position
+			if cy < len(displayV2Meta) {
+				TheLog.Printf("Refreshing v3 with cursor position %d", cy)
+				err = refreshV3(g, cy)
+				if err != nil {
+					TheLog.Printf("Error refreshing v3: %v", err)
+				} else {
+					TheLog.Println("Successfully refreshed v3")
+				}
+			} else {
+				TheLog.Printf("Cursor position %d is out of range for displayV2Meta (length %d)", cy, len(displayV2Meta))
+			}
+		} else {
+			TheLog.Println("Not in conversation view, skipping refresh")
+		}
+		return nil
+	})
 }
