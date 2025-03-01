@@ -253,7 +253,8 @@ func cancelInput(g *gocui.Gui, v *gocui.View) error {
 
 func confirmPostInput(g *gocui.Gui, v *gocui.View) error {
 	v.Title = "Confirm Post? ENTER to post / ESC to cancel"
-	v.BgColor = uiColorBg
+	v.BgColor = gocui.ColorGreen
+	v.FgColor = gocui.ColorWhite
 	v.Editable = false
 	g.SetKeybinding("v5", gocui.KeyEnter, gocui.ModNone, postInput)
 	return nil

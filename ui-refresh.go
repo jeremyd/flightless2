@@ -349,13 +349,15 @@ func refreshV4(g *gocui.Gui, cursor int) error {
 	}
 
 	if len(displayV2Meta) == 0 || cursor >= len(displayV2Meta) {
-		return nil
-	}
-	curDMRelays := []DMRelay{}
-	DB.Where("pubkey_hex = ?", displayV2Meta[cursor].PubkeyHex).Find(&curDMRelays)
-	fmt.Fprintf(v4, "\n%s DM relays:\n", displayV2Meta[cursor].Name)
-	for _, relay := range curDMRelays {
-		fmt.Fprintf(v4, "%s\n", relay.Url)
+		TheLog.Printf("cursor out of range: %d", cursor)
+	} else {
+
+		curDMRelays := []DMRelay{}
+		DB.Where("pubkey_hex = ?", displayV2Meta[cursor].PubkeyHex).Find(&curDMRelays)
+		fmt.Fprintf(v4, "\n%s DM relays:\n", displayV2Meta[cursor].Name)
+		for _, relay := range curDMRelays {
+			fmt.Fprintf(v4, "%s\n", relay.Url)
+		}
 	}
 
 	var RelayStatuses []RelayStatus
@@ -423,7 +425,11 @@ func updateKeybindsView(g *gocui.Gui) error {
 	p := fmt.Sprintf("(%s)ubkey lookup", fmt.Sprintf(NoticeColor, "P"))
 	tt := fmt.Sprintf("(%s)oggle view", fmt.Sprintf(NoticeColor, "T"))
 
-	fmt.Fprintf(v5, "%-30s%-30s%-30s%-30s%-30s%-30s\n\n", z, d, c, fe, p, tt)
+	fmt.Fprintf(v5, "%-30s%-30s%-30s%-30s%-30s%-30s\n", z, d, c, fe, p, tt)
+
+	// Third row of keybinds - add profile menu
+	m := fmt.Sprintf("(%s)anage profile", fmt.Sprintf(NoticeColor, "M"))
+	fmt.Fprintf(v5, "%-30s\n\n", m)
 
 	return nil
 }

@@ -188,6 +188,49 @@ func keybindings(g *gocui.Gui) error {
 		log.Panicln(err)
 	}
 
+	/* profile menu */
+	// m key (Profile Menu)
+	if err := g.SetKeybinding("", rune(0x6d), gocui.ModNone, profileMenu); err != nil {
+		log.Panicln(err)
+	}
+
+	// e key (Edit Profile Metadata)
+	if err := g.SetKeybinding("profile", rune(0x65), gocui.ModNone, editProfileMetadata); err != nil {
+		log.Panicln(err)
+	}
+
+	// d key (Edit DM Relays)
+	if err := g.SetKeybinding("profile", rune(0x64), gocui.ModNone, editDMRelays); err != nil {
+		log.Panicln(err)
+	}
+
+	// ESC key (Cancel Profile Menu)
+	if err := g.SetKeybinding("profile", gocui.KeyEsc, gocui.ModNone, cancelProfile); err != nil {
+		log.Panicln(err)
+	}
+
+	/* profile metadata edit */
+	// Enter key (Save Profile Metadata)
+	if err := g.SetKeybinding("profileedit", gocui.KeyEnter, gocui.ModNone, saveProfileMetadata); err != nil {
+		log.Panicln(err)
+	}
+
+	// ESC key (Cancel Profile Metadata Edit)
+	if err := g.SetKeybinding("profileedit", gocui.KeyEsc, gocui.ModNone, cancelProfileEdit); err != nil {
+		log.Panicln(err)
+	}
+
+	/* DM relays edit */
+	// Enter key (Save DM Relays)
+	if err := g.SetKeybinding("dmrelaysedit", gocui.KeyEnter, gocui.ModNone, saveDMRelays); err != nil {
+		log.Panicln(err)
+	}
+
+	// ESC key (Cancel DM Relays Edit)
+	if err := g.SetKeybinding("dmrelaysedit", gocui.KeyEsc, gocui.ModNone, cancelDMRelaysEdit); err != nil {
+		log.Panicln(err)
+	}
+
 	/* posting view */
 	//cancel key
 	if err := g.SetKeybinding("v5", gocui.KeyEsc, gocui.ModNone, cancelInput); err != nil {

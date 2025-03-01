@@ -87,8 +87,8 @@ func generateConfig(g *gocui.Gui, v *gocui.View) error {
 			TheLog.Printf("error saving private key: %s", e2)
 		}
 
-		g.SetCurrentView("v2")
 		g.DeleteView("config")
+		config(g, v)
 	}
 	return nil
 }
@@ -131,7 +131,6 @@ func doConfigNew(g *gocui.Gui, v *gocui.View) error {
 		line := v.Buffer()
 		if line == "" {
 			TheLog.Println("no private key entered")
-			g.SetCurrentView("v2")
 			g.DeleteView("confignew")
 			return nil
 		}
@@ -150,7 +149,6 @@ func doConfigNew(g *gocui.Gui, v *gocui.View) error {
 		}
 		if !isHex(useKey) {
 			TheLog.Println("private key was invalid")
-			g.SetCurrentView("v2")
 			g.DeleteView("confignew")
 			return nil
 		}
@@ -167,9 +165,9 @@ func doConfigNew(g *gocui.Gui, v *gocui.View) error {
 			TheLog.Printf("error saving private key: %s", e2)
 		}
 
-		g.SetCurrentView("v2")
 		g.DeleteView("confignew")
-		//refresh(g, v)
+		g.DeleteView("config")
+		config(g, v)
 	}
 	return nil
 }
@@ -191,7 +189,6 @@ func doConfigDel(g *gocui.Gui, v *gocui.View) error {
 	if v != nil {
 		line := v.Buffer()
 		if line == "" {
-			g.SetCurrentView("v2")
 			g.DeleteView("config")
 			return nil
 		}
@@ -215,6 +212,7 @@ func doConfigDel(g *gocui.Gui, v *gocui.View) error {
 		}
 
 		g.DeleteView("config")
+		config(g, v)
 	}
 	return nil
 }
@@ -258,12 +256,12 @@ func cursorUpConfig(g *gocui.Gui, v *gocui.View) error {
 
 func cancelConfigNew(g *gocui.Gui, v *gocui.View) error {
 	g.DeleteView("confignew")
-	g.SetCurrentView("v2")
+	config(g, v)
 	return nil
 }
 
 func cancelConfigShow(g *gocui.Gui, v *gocui.View) error {
 	g.DeleteView("configshow")
-	g.SetCurrentView("v2")
+	config(g, v)
 	return nil
 }
