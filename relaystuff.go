@@ -174,7 +174,7 @@ func doDMRelays(db *gorm.DB, ctx context.Context) {
 			if sub, err := relay.Subscribe(ctx, dmFilters); err != nil {
 				TheLog.Printf("failed to subscribe to relay: %s, %v\n", dmr.Url, err)
 			} else {
-				TheLog.Printf("subscribed to dm feed from relay: %s for pubkey: %s\n", dmr.Url, pubkey)
+				TheLog.Printf(" from relay: %s for pubkey: %s\n", dmr.Url, pubkey)
 				nostrSubs = append(nostrSubs, sub)
 				go func() {
 					processSub(sub, relay, pubkey)

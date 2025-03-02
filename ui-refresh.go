@@ -56,6 +56,7 @@ func refreshV2Conversations(g *gocui.Gui, v *gocui.View) error {
 	DB.Where("active = ?", true).First(&account)
 	pubkey := account.Pubkey
 
+	// this does not show, messages that we sent ..
 	var allMessages []ChatMessage
 	DB.Where("to_pubkey = ?", pubkey).Find(&allMessages)
 

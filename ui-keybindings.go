@@ -209,27 +209,77 @@ func keybindings(g *gocui.Gui) error {
 		log.Panicln(err)
 	}
 
-	/* profile metadata edit */
-	// Enter key (Save Profile Metadata)
-	if err := g.SetKeybinding("profileedit", gocui.KeyEnter, gocui.ModNone, saveProfileMetadata); err != nil {
+	/* profile fields selection */
+	// Enter key (Select Field)
+	if err := g.SetKeybinding("profilefields", gocui.KeyEnter, gocui.ModNone, selectProfileField); err != nil {
 		log.Panicln(err)
 	}
 
-	// ESC key (Cancel Profile Metadata Edit)
-	if err := g.SetKeybinding("profileedit", gocui.KeyEsc, gocui.ModNone, cancelProfileEdit); err != nil {
+	// ESC key (Cancel Profile Fields Selection)
+	if err := g.SetKeybinding("profilefields", gocui.KeyEsc, gocui.ModNone, cancelProfileEdit); err != nil {
 		log.Panicln(err)
 	}
 
-	/* DM relays edit */
-	// Enter key (Save DM Relays)
-	if err := g.SetKeybinding("dmrelaysedit", gocui.KeyEnter, gocui.ModNone, saveDMRelays); err != nil {
+	// Arrow keys for navigation
+	if err := g.SetKeybinding("profilefields", gocui.KeyArrowDown, gocui.ModNone, cursorDown); err != nil {
+		log.Panicln(err)
+	}
+	if err := g.SetKeybinding("profilefields", gocui.KeyArrowUp, gocui.ModNone, cursorUp); err != nil {
+		log.Panicln(err)
+	}
+
+	/* field edit */
+	// Enter key (Save Field Edit)
+	if err := g.SetKeybinding("fieldedit", gocui.KeyEnter, gocui.ModNone, saveSingleField); err != nil {
+		log.Panicln(err)
+	}
+
+	// ESC key (Cancel Field Edit)
+	if err := g.SetKeybinding("fieldedit", gocui.KeyEsc, gocui.ModNone, cancelFieldEdit); err != nil {
+		log.Panicln(err)
+	}
+
+	/* DM relays list */
+	// n key (Add DM Relay)
+	if err := g.SetKeybinding("dmrelayslist", rune(0x6e), gocui.ModNone, addDMRelay); err != nil {
+		log.Panicln(err)
+	}
+
+	// d key (Delete DM Relay)
+	if err := g.SetKeybinding("dmrelayslist", rune(0x64), gocui.ModNone, deleteDMRelay); err != nil {
+		log.Panicln(err)
+	}
+
+	// s key (Save DM Relays)
+	if err := g.SetKeybinding("dmrelayslist", rune(0x73), gocui.ModNone, saveDMRelaysChanges); err != nil {
 		log.Panicln(err)
 	}
 
 	// ESC key (Cancel DM Relays Edit)
-	if err := g.SetKeybinding("dmrelaysedit", gocui.KeyEsc, gocui.ModNone, cancelDMRelaysEdit); err != nil {
+	if err := g.SetKeybinding("dmrelayslist", gocui.KeyEsc, gocui.ModNone, cancelDMRelaysEdit); err != nil {
 		log.Panicln(err)
 	}
+
+	// Arrow keys for navigation
+	if err := g.SetKeybinding("dmrelayslist", gocui.KeyArrowDown, gocui.ModNone, cursorDown); err != nil {
+		log.Panicln(err)
+	}
+	if err := g.SetKeybinding("dmrelayslist", gocui.KeyArrowUp, gocui.ModNone, cursorUp); err != nil {
+		log.Panicln(err)
+	}
+
+	/* Add DM relay */
+	// Enter key (Save New DM Relay)
+	if err := g.SetKeybinding("adddmrelay", gocui.KeyEnter, gocui.ModNone, saveNewDMRelay); err != nil {
+		log.Panicln(err)
+	}
+
+	// ESC key (Cancel Add DM Relay)
+	if err := g.SetKeybinding("adddmrelay", gocui.KeyEsc, gocui.ModNone, cancelAddDMRelay); err != nil {
+		log.Panicln(err)
+	}
+
+	/* Remove old DM relays edit keybindings - these are no longer needed */
 
 	/* posting view */
 	//cancel key
