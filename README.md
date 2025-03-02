@@ -15,6 +15,9 @@ go build
 ./flightless2
 ```
 
+## Screenshot
+![screenshot1](https://i.nostr.build/WYfOvoKuawrAu3vp.png)
+
 ## Behind the scenes
 
 It keeps it's data in sqlite in the current working directory called `flightless.db`
