@@ -22,6 +22,7 @@ var followSearch = false
 var CurrOffset = 0
 var followPages []Metadata
 var enterTwice = 0
+var isComposingMessage = false // Global flag to track if user is composing a message
 
 // Custom editor to handle shift+enter in editable views
 type messageEditor struct {
@@ -187,6 +188,7 @@ func cancelInput(g *gocui.Gui, v *gocui.View) error {
 	v5.BgColor = uiColorBg
 	v5.FgColor = uiColorFg
 	v5.Clear()
+	isComposingMessage = false
 	NoticeColor := "\033[1;36m%s\033[0m"
 	s := fmt.Sprintf("(%s)earch", fmt.Sprintf(NoticeColor, "S"))
 	q := fmt.Sprintf("(%s)uit", fmt.Sprintf(NoticeColor, "Q"))

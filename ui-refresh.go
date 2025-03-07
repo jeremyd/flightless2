@@ -394,6 +394,7 @@ func refreshV5(g *gocui.Gui, cursor int) error {
 	v5.Editor = &messageEditor{gui: g}
 	g.Cursor = true
 	g.SetCurrentView("v5")
+	isComposingMessage = true
 
 	return nil
 }

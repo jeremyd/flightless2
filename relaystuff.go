@@ -647,20 +647,27 @@ func processSub(sub *nostr.Subscription, relay *nostr.Relay, pubkey string) {
 
 }
 
+func onlyRefreshConversation() {
+	g := TheGui
+	v2, _ := g.View("v2")
+	_, cy := v2.Cursor()
+	refreshV3(g, cy)
+}
+
 // refreshUIAfterNewMessage triggers a UI refresh for the conversation view
 // This function is called from a goroutine, so we need to use g.Update
 func refreshUIAfterNewMessage() {
 	TheLog.Println("Refreshing UI after new message")
 
+	// If user is composing a message, don't refresh the UI
+	if isComposingMessage {
+		TheLog.Println("User is composing a message, skipping refresh")
+		onlyRefreshConversation()
+		return
+	}
+
 	// First refresh immediately
 	refreshNow()
-
-	// Then schedule another refresh after a delay to ensure DB transaction is complete
-	go func() {
-		time.Sleep(500 * time.Millisecond)
-		TheLog.Println("Performing delayed refresh after new message")
-		refreshNow()
-	}()
 }
 
 // Helper function to perform the actual refresh
