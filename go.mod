@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	github.com/awesome-gocui/gocui v1.1.0
-	github.com/gdamore/tcell/v2 v2.8.1
+	github.com/gdamore/tcell/v2 v2.8.1 // indirect
 	github.com/glebarez/sqlite v1.11.0
 	github.com/jeremyd/crusher17 v0.0.2
 	github.com/nbd-wtf/go-nostr v0.50.0

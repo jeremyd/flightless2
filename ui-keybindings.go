@@ -292,5 +292,12 @@ func keybindings(g *gocui.Gui) error {
 		log.Panicln(err)
 	}
 
+	// x key (switch theme)
+	if err := g.SetKeybinding("", rune(0x78), gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		return switchTheme(g)
+	}); err != nil {
+		log.Panicln(err)
+	}
+
 	return nil
 }

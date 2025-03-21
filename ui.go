@@ -174,7 +174,15 @@ func toggleConversationFollows(g *gocui.Gui, v *gocui.View) error {
 }
 
 func askExpand(g *gocui.Gui, cursor int) error {
+	// Set the flag to indicate we're composing a message
+	isComposingMessage = true
+	
+	// Refresh the v5 view for message composition
 	refreshV5(g, cursor)
+	
+	// Set the current view to v5 for input
+	g.SetCurrentView("v5")
+	
 	return nil
 }
 
@@ -189,22 +197,32 @@ func cancelInput(g *gocui.Gui, v *gocui.View) error {
 	v5.FgColor = uiColorFg
 	v5.Clear()
 	isComposingMessage = false
-	NoticeColor := "\033[1;36m%s\033[0m"
-	s := fmt.Sprintf("(%s)earch", fmt.Sprintf(NoticeColor, "S"))
-	q := fmt.Sprintf("(%s)uit", fmt.Sprintf(NoticeColor, "Q"))
-	r := fmt.Sprintf("(%s)efresh", fmt.Sprintf(NoticeColor, "R"))
-	t := fmt.Sprintf("(%s)next window", fmt.Sprintf(NoticeColor, "TAB"))
-	a := fmt.Sprintf("(%s)dd relay", fmt.Sprintf(NoticeColor, "A"))
-	w := fmt.Sprintf("(%s)write note", fmt.Sprintf(NoticeColor, "ENTER"))
+	// Use the action highlight color (orange-yellow #ffaf00) instead of cyan
+	ActionColor := fmt.Sprintf("\033[38;2;%d;%d;%dm%%s\033[0m", 0xff, 0xaf, 0x00)
+	s := fmt.Sprintf("(%s)earch", fmt.Sprintf(ActionColor, "S"))
+	q := fmt.Sprintf("(%s)uit", fmt.Sprintf(ActionColor, "Q"))
+	r := fmt.Sprintf("(%s)efresh", fmt.Sprintf(ActionColor, "R"))
+	t := fmt.Sprintf("(%s)next window", fmt.Sprintf(ActionColor, "TAB"))
+	a := fmt.Sprintf("(%s)dd relay", fmt.Sprintf(ActionColor, "A"))
+	w := fmt.Sprintf("(%s)write note", fmt.Sprintf(ActionColor, "ENTER"))
 
-	fmt.Fprintf(v, "%-30s%-30s%-30s%-30s%-30s%-30s\n", s, q, r, t, a, w)
-	z := fmt.Sprintf("(%s)ap", fmt.Sprintf(NoticeColor, "Z"))
-	d := fmt.Sprintf("(%s)elete relay", fmt.Sprintf(NoticeColor, "D"))
-	c := fmt.Sprintf("(%s)onfigure keys", fmt.Sprintf(NoticeColor, "C"))
-	fe := fmt.Sprintf("(%s)etch person", fmt.Sprintf(NoticeColor, "F"))
-	p := fmt.Sprintf("(%s)ubkey lookup", fmt.Sprintf(NoticeColor, "P"))
-	tt := fmt.Sprintf("(%s)oggle view", fmt.Sprintf(NoticeColor, "T"))
-	fmt.Fprintf(v, "%-30s%-30s%-30s%-30s%-30s%-30s\n\n", z, d, c, fe, p, tt)
+	fmt.Fprintf(v5, "%-30s%-30s%-30s%-30s%-30s%-30s\n", s, q, r, t, a, w)
+	z := fmt.Sprintf("(%s)ap", fmt.Sprintf(ActionColor, "Z"))
+	d := fmt.Sprintf("(%s)elete relay", fmt.Sprintf(ActionColor, "D"))
+	c := fmt.Sprintf("(%s)onfigure keys", fmt.Sprintf(ActionColor, "C"))
+	fe := fmt.Sprintf("(%s)etch person", fmt.Sprintf(ActionColor, "F"))
+	p := fmt.Sprintf("(%s)ubkey lookup", fmt.Sprintf(ActionColor, "P"))
+	tt := fmt.Sprintf("(%s)oggle view", fmt.Sprintf(ActionColor, "T"))
+	fmt.Fprintf(v5, "%-30s%-30s%-30s%-30s%-30s%-30s\n", z, d, c, fe, p, tt)
+
+	// Add theme switching keybind
+	m := fmt.Sprintf("(%s)anage profile", fmt.Sprintf(ActionColor, "M"))
+	theme := fmt.Sprintf("(%s)witch theme", fmt.Sprintf(ActionColor, "X"))
+	
+	// Display current theme name
+	themeName := fmt.Sprintf("Current theme: %s", activeTheme.Name)
+	
+	fmt.Fprintf(v5, "%-30s%-30s%-30s\n\n", m, theme, themeName)
 
 	g.DeleteKeybinding("v5", gocui.KeyEnter, gocui.ModNone)
 	g.SetCurrentView("v2")

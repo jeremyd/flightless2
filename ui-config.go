@@ -17,7 +17,7 @@ func config(g *gocui.Gui, v *gocui.View) error {
 	if aerr != nil {
 		TheLog.Printf("error getting accounts: %s", aerr)
 	}
-	if v, err := g.SetView("config", maxX/2-50, maxY/2-len(accounts), maxX/2+50, maxY/2+1, 0); err != nil {
+	if v, err := g.SetView("config", maxX/2-40, maxY/2-len(accounts), maxX/2+40, maxY/2+1, 0); err != nil {
 		if !errors.Is(err, gocui.ErrUnknownView) {
 			return err
 		}
@@ -40,7 +40,7 @@ func config(g *gocui.Gui, v *gocui.View) error {
 			}
 		}
 
-		v.Title = "Config Private Keys - [Enter]Use key - [ESC]Cancel - [n]ew key - [d]elete key - [g]enerate key - [p]rivate key reveal"
+		v.Title = "Config Private Keys"
 		v.Highlight = true
 		v.SelBgColor = gocui.ColorGreen
 		v.SelFgColor = gocui.ColorBlack
@@ -50,6 +50,9 @@ func config(g *gocui.Gui, v *gocui.View) error {
 			TheLog.Println("error setting current view to config")
 			return nil
 		}
+		
+		// Update the keybinds view to show main configuration menu keybinds
+		updateMainConfigKeybindsView(g)
 	}
 	return nil
 }
@@ -60,12 +63,12 @@ func configNew(
 ) error {
 	maxX, maxY := g.Size()
 	g.DeleteView("config")
-	if v, err := g.SetView("confignew", maxX/2-50, maxY/2-1, maxX/2+50, maxY/2+1, 0); err != nil {
+	if v, err := g.SetView("confignew", maxX/2-40, maxY/2-1, maxX/2+40, maxY/2+1, 0); err != nil {
 		if !errors.Is(err, gocui.ErrUnknownView) {
 			return err
 		}
 
-		v.Title = "New/Edit Private Key - [Enter]Save - [ESC]Cancel -"
+		v.Title = "New/Edit Private Key"
 		v.Highlight = true
 		v.SelBgColor = gocui.ColorGreen
 		v.SelFgColor = gocui.ColorBlack
@@ -74,6 +77,9 @@ func configNew(
 		if _, err := g.SetCurrentView("confignew"); err != nil {
 			return err
 		}
+		
+		// Update the keybinds view to show configuration menu keybinds
+		updateConfigKeybindsView(g)
 	}
 	return nil
 }
@@ -109,10 +115,15 @@ func activateConfig(
 
 	g.DeleteView("config")
 	g.SetCurrentView("v2")
+	
+	// Reset cursor position and offset to prevent panic
 	v2, _ := g.View("v2")
 	v2.SetCursor(0, 0)
-	refreshV2Conversations(g, v)
-	refreshV3(g, 0)
+	CurrOffset = 0
+	
+	// Refresh all views to update v2 and v3 with the new active key
+	refreshAllViews(g, v)
+
 	return nil
 }
 
@@ -151,13 +162,13 @@ func configShowPrivateKey(
 	}
 	sk := Decrypt(string(Password), accounts[cy].Privatekey)
 	g.DeleteView("config")
-	if v, err := g.SetView("configshow", maxX/2-50, maxY/2-1, maxX/2+50, maxY/2+1, 0); err != nil {
+	if v, err := g.SetView("configshow", maxX/2-40, maxY/2-1, maxX/2+40, maxY/2+1, 0); err != nil {
 		if !errors.Is(err, gocui.ErrUnknownView) {
 			return err
 		}
 
 		fmt.Fprintf(v, "%s", sk)
-		v.Title = "*** Showing Private Key ***  [ESC]Dismiss"
+		v.Title = "*** Showing Private Key ***"
 		v.Highlight = true
 		v.SelBgColor = gocui.ColorGreen
 		v.SelFgColor = gocui.ColorBlack
@@ -166,6 +177,9 @@ func configShowPrivateKey(
 		if _, err := g.SetCurrentView("configshow"); err != nil {
 			return err
 		}
+		
+		// Update the keybinds view to show private key reveal screen keybinds
+		updatePrivateKeyRevealKeybindsView(g)
 	}
 	return nil
 }
@@ -219,6 +233,15 @@ func doConfigNew(g *gocui.Gui, v *gocui.View) error {
 func cancelConfig(g *gocui.Gui, v *gocui.View) error {
 	g.DeleteView("config")
 	g.SetCurrentView("v2")
+	
+	// Reset cursor position and offset to prevent panic
+	v2, _ := g.View("v2")
+	v2.SetCursor(0, 0)
+	CurrOffset = 0
+	
+	// Refresh all views to update v2 and v3
+	refreshAllViews(g, v)
+	
 	return nil
 }
 
@@ -301,11 +324,29 @@ func cursorUpConfig(g *gocui.Gui, v *gocui.View) error {
 func cancelConfigNew(g *gocui.Gui, v *gocui.View) error {
 	g.DeleteView("confignew")
 	config(g, v)
+	
+	// Reset cursor position and offset to prevent panic
+	v2, _ := g.View("v2")
+	v2.SetCursor(0, 0)
+	CurrOffset = 0
+	
+	// Refresh all views to update v2 and v3
+	refreshAllViews(g, v)
+	
 	return nil
 }
 
 func cancelConfigShow(g *gocui.Gui, v *gocui.View) error {
 	g.DeleteView("configshow")
 	config(g, v)
+	
+	// Reset cursor position and offset to prevent panic
+	v2, _ := g.View("v2")
+	v2.SetCursor(0, 0)
+	CurrOffset = 0
+	
+	// Refresh all views to update v2 and v3
+	refreshAllViews(g, v)
+	
 	return nil
 }
