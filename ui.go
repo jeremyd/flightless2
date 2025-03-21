@@ -176,13 +176,13 @@ func toggleConversationFollows(g *gocui.Gui, v *gocui.View) error {
 func askExpand(g *gocui.Gui, cursor int) error {
 	// Set the flag to indicate we're composing a message
 	isComposingMessage = true
-	
+
 	// Refresh the v5 view for message composition
 	refreshV5(g, cursor)
-	
+
 	// Set the current view to v5 for input
 	g.SetCurrentView("v5")
-	
+
 	return nil
 }
 
@@ -218,10 +218,10 @@ func cancelInput(g *gocui.Gui, v *gocui.View) error {
 	// Add theme switching keybind
 	m := fmt.Sprintf("(%s)anage profile", fmt.Sprintf(ActionColor, "M"))
 	theme := fmt.Sprintf("(%s)witch theme", fmt.Sprintf(ActionColor, "X"))
-	
+
 	// Display current theme name
 	themeName := fmt.Sprintf("Current theme: %s", activeTheme.Name)
-	
+
 	fmt.Fprintf(v5, "%-30s%-30s%-30s\n\n", m, theme, themeName)
 
 	g.DeleteKeybinding("v5", gocui.KeyEnter, gocui.ModNone)
@@ -335,6 +335,9 @@ func postInput(g *gocui.Gui, v *gocui.View) error {
 				var isConnected bool
 				for _, existingRelay := range nostrRelays {
 					if existingRelay != nil && existingRelay.URL == relayUrl {
+						if !existingRelay.IsConnected() {
+							existingRelay.Connect(ctx)
+						}
 						// Publish both the sender's and receiver's giftwraps
 						for _, wrappedEvent := range giftWrap.GiftWraps {
 							var ev nostr.Event
@@ -345,6 +348,7 @@ func postInput(g *gocui.Gui, v *gocui.View) error {
 							}
 							if err := existingRelay.Publish(ctx, ev); err != nil {
 								TheLog.Printf("Error publishing giftwrap to existing relay %s: %v", relayUrl, err)
+
 							} else {
 								TheLog.Printf("Published giftwrap to existing relay %s", relayUrl)
 							}

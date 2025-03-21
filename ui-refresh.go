@@ -134,6 +134,43 @@ func refreshV2Conversations(g *gocui.Gui, v *gocui.View) error {
 	return nil
 }
 
+func onlyRefreshConversation() {
+	g := TheGui
+	v2, _ := g.View("v2")
+	_, cy := v2.Cursor()
+	refreshV3(g, cy)
+}
+
+// refreshUIAfterNewMessage triggers a UI refresh for the conversation view
+// This function is called from a goroutine, so we need to use g.Update
+func refreshUIAfterNewMessage() {
+	TheLog.Println("Refreshing UI after new message")
+
+	// If user is composing a message, don't refresh the UI
+	if isComposingMessage {
+		TheLog.Println("User is composing a message, skipping refresh")
+		onlyRefreshConversation()
+		return
+	}
+
+	// First refresh immediately
+	refreshNow()
+}
+
+// Helper function to perform the actual refresh
+func refreshNow() {
+	TheGui.Update(func(g *gocui.Gui) error {
+		// Refresh the conversation view
+		v2, err := g.View("v2")
+		if err != nil {
+			TheLog.Printf("Error getting v2 view: %v", err)
+			return err
+		}
+		refreshAllViews(g, v2)
+		return nil
+	})
+}
+
 func refreshV2(g *gocui.Gui, v *gocui.View) error {
 	v2, err := g.View("v2")
 	if err != nil {

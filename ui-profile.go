@@ -291,10 +291,17 @@ func saveSingleField(g *gocui.Gui, v *gocui.View) error {
 	// Publish to relays
 	TheLog.Printf("Publishing metadata to relays after updating %s...", fieldName)
 	for _, relay := range nostrRelays {
-		ctx := context.Background()
+		ctx := context.TODO()
+		if !relay.IsConnected() {
+			TheLog.Printf("relay was not connected %s, reconnecting", relay.URL)
+			relay.Connect(ctx)
+		}
+		TheLog.Printf("publishing to %s", relay.URL)
 		err := relay.Publish(ctx, ev)
 		if err != nil {
 			TheLog.Printf("Error publishing metadata to relay %s: %v", relay.URL, err)
+		} else {
+			TheLog.Printf("published!")
 		}
 	}
 

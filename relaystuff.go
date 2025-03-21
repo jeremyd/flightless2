@@ -12,7 +12,6 @@ import (
 
 	"net/http"
 
-	"github.com/awesome-gocui/gocui"
 	"github.com/jeremyd/crusher17"
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/nbd-wtf/go-nostr/nip19"
@@ -164,13 +163,16 @@ func doDMRelays(db *gorm.DB, ctx context.Context) {
 		// check if connection already established
 		var relay *nostr.Relay
 		for _, r := range nostrRelays {
-			if r.URL == dmr.Url {
+			if r.URL == dmr.Url && r.IsConnected() {
 				relay = r
 			}
 		}
 
+		preExistingConnection := false
+
 		if relay != nil {
 			TheLog.Printf("connection already established to relay: %s\n", dmr.Url)
+			preExistingConnection = true
 			if sub, err := relay.Subscribe(ctx, dmFilters); err != nil {
 				TheLog.Printf("failed to subscribe to relay: %s, %v\n", dmr.Url, err)
 			} else {
@@ -180,25 +182,28 @@ func doDMRelays(db *gorm.DB, ctx context.Context) {
 					processSub(sub, relay, pubkey)
 				}()
 			}
+		} else {
+			// Connect with auth support
+			var err error
+			relay, err = nostr.RelayConnect(ctx, dmr.Url)
+			if err != nil {
+				TheLog.Printf("failed initial connection to relay: %s, %s; skipping relay", dmr.Url, err)
+				UpdateOrCreateRelayStatus(db, dmr.Url, "failed initial connection")
+				return
+			}
 		}
 
-		// Connect with auth support
-		relay, err := nostr.RelayConnect(ctx, dmr.Url)
-		if err != nil {
-			TheLog.Printf("failed initial connection to relay: %s, %s; skipping relay", dmr.Url, err)
-			UpdateOrCreateRelayStatus(db, dmr.Url, "failed initial connection")
-			return
+		if !preExistingConnection {
+			nostrRelays = append(nostrRelays, relay)
 		}
-
-		nostrRelays = append(nostrRelays, relay)
 
 		// Check if relay requires auth via NIP-11
-		if account.Privatekey != "" && checkRelayRequiresAuth(dmr.Url) {
+		if !preExistingConnection && account.Privatekey != "" && checkRelayRequiresAuth(dmr.Url) {
 			// Decrypt the private key using the global Password
 			decryptedKey := Decrypt(string(Password), account.Privatekey)
 
 			// Set up auth with signing function
-			err = relay.Auth(ctx, func(evt *nostr.Event) error {
+			err := relay.Auth(ctx, func(evt *nostr.Event) error {
 				return evt.Sign(decryptedKey)
 			})
 			if err != nil {
@@ -245,6 +250,7 @@ func doRelay(db *gorm.DB, ctx context.Context, url string) bool {
 		UpdateOrCreateRelayStatus(db, url, "failed initial connection")
 		return false
 	}
+
 	nostrRelays = append(nostrRelays, relay)
 
 	// Check if relay requires auth via NIP-11
@@ -645,41 +651,4 @@ func processSub(sub *nostr.Subscription, relay *nostr.Relay, pubkey string) {
 		}
 	}
 
-}
-
-func onlyRefreshConversation() {
-	g := TheGui
-	v2, _ := g.View("v2")
-	_, cy := v2.Cursor()
-	refreshV3(g, cy)
-}
-
-// refreshUIAfterNewMessage triggers a UI refresh for the conversation view
-// This function is called from a goroutine, so we need to use g.Update
-func refreshUIAfterNewMessage() {
-	TheLog.Println("Refreshing UI after new message")
-
-	// If user is composing a message, don't refresh the UI
-	if isComposingMessage {
-		TheLog.Println("User is composing a message, skipping refresh")
-		onlyRefreshConversation()
-		return
-	}
-
-	// First refresh immediately
-	refreshNow()
-}
-
-// Helper function to perform the actual refresh
-func refreshNow() {
-	TheGui.Update(func(g *gocui.Gui) error {
-		// Refresh the conversation view
-		v2, err := g.View("v2")
-		if err != nil {
-			TheLog.Printf("Error getting v2 view: %v", err)
-			return err
-		}
-		refreshAllViews(g, v2)
-		return nil
-	})
 }
