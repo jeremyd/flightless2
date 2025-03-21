@@ -566,15 +566,15 @@ func updateMainConfigKeybindsView(g *gocui.Gui) error {
 	ActionColor := fmt.Sprintf("\033[38;2;%d;%d;%dm%%s\033[0m", 0xff, 0xaf, 0x00)
 
 	// Main configuration menu keybinds
-	use := fmt.Sprintf("(%s)se key", fmt.Sprintf(ActionColor, "Enter"))
-	cancel := fmt.Sprintf("(%s)ancel", fmt.Sprintf(ActionColor, "Esc"))
-	new := fmt.Sprintf("(%s)ew key", fmt.Sprintf(ActionColor, "n"))
-	delete := fmt.Sprintf("(%s)elete key", fmt.Sprintf(ActionColor, "d"))
-	generate := fmt.Sprintf("(%s)enerate key", fmt.Sprintf(ActionColor, "g"))
-	reveal := fmt.Sprintf("(%s)rivate key reveal", fmt.Sprintf(ActionColor, "p"))
+	use := fmt.Sprintf("-(%s) Use key", fmt.Sprintf(ActionColor, "Enter"))
+	cancel := fmt.Sprintf("-(%s) Cancel", fmt.Sprintf(ActionColor, "Esc"))
+	new := fmt.Sprintf("(%s)ew key", fmt.Sprintf(ActionColor, "N"))
+	delete := fmt.Sprintf("(%s)elete key", fmt.Sprintf(ActionColor, "D"))
+	generate := fmt.Sprintf("(%s)enerate key", fmt.Sprintf(ActionColor, "G"))
+	reveal := fmt.Sprintf("(%s)rivate key reveal", fmt.Sprintf(ActionColor, "P"))
 
-	fmt.Fprintf(v5, "%-30s%-30s%-30s\n", use, cancel, new)
-	fmt.Fprintf(v5, "%-30s%-30s%-30s\n", delete, generate, reveal)
+	fmt.Fprintf(v5, "%-40s%-40s%-40s\n", use, cancel, new)
+	fmt.Fprintf(v5, "%-40s%-40s%-40s\n", delete, generate, reveal)
 
 	return nil
 }
@@ -594,6 +594,111 @@ func updatePrivateKeyRevealKeybindsView(g *gocui.Gui) error {
 	dismiss := fmt.Sprintf("(%s)ismiss", fmt.Sprintf(ActionColor, "Esc"))
 
 	fmt.Fprintf(v5, "%-40s\n", dismiss)
+
+	return nil
+}
+
+// updateProfileKeybindsView updates the keybinds view (v5) with keybinds for the profile menu
+func updateProfileKeybindsView(g *gocui.Gui) error {
+	v5, err := g.View("v5")
+	if err != nil {
+		return err
+	}
+
+	v5.Clear()
+	// Use the action highlight color (orange-yellow #ffaf00) instead of cyan
+	ActionColor := fmt.Sprintf("\033[38;2;%d;%d;%dm%%s\033[0m", 0xff, 0xaf, 0x00)
+
+	// Profile menu keybinds
+	edit := fmt.Sprintf("(%s)dit Metadata", fmt.Sprintf(ActionColor, "e"))
+	dmRelays := fmt.Sprintf("(%s)m Relays", fmt.Sprintf(ActionColor, "d"))
+	cancel := fmt.Sprintf("(%s) Cancel", fmt.Sprintf(ActionColor, "Esc"))
+
+	fmt.Fprintf(v5, "%-40s%-40s%-40s\n", edit, dmRelays, cancel)
+
+	return nil
+}
+
+// updateProfileFieldsKeybindsView updates the keybinds view (v5) with keybinds for the profile fields selection
+func updateProfileFieldsKeybindsView(g *gocui.Gui) error {
+	v5, err := g.View("v5")
+	if err != nil {
+		return err
+	}
+
+	v5.Clear()
+	// Use the action highlight color (orange-yellow #ffaf00) instead of cyan
+	ActionColor := fmt.Sprintf("\033[38;2;%d;%d;%dm%%s\033[0m", 0xff, 0xaf, 0x00)
+
+	// Profile fields keybinds
+	select_key := fmt.Sprintf("(%s) Select", fmt.Sprintf(ActionColor, "Enter"))
+	cancel := fmt.Sprintf("(%s) Cancel", fmt.Sprintf(ActionColor, "Esc"))
+	navigate := fmt.Sprintf("(%s) Navigate", fmt.Sprintf(ActionColor, "↑↓"))
+
+	fmt.Fprintf(v5, "%-40s%-40s%-40s\n", select_key, cancel, navigate)
+
+	return nil
+}
+
+// updateFieldEditKeybindsView updates the keybinds view (v5) with keybinds for the field edit screen
+func updateFieldEditKeybindsView(g *gocui.Gui) error {
+	v5, err := g.View("v5")
+	if err != nil {
+		return err
+	}
+
+	v5.Clear()
+	// Use the action highlight color (orange-yellow #ffaf00) instead of cyan
+	ActionColor := fmt.Sprintf("\033[38;2;%d;%d;%dm%%s\033[0m", 0xff, 0xaf, 0x00)
+
+	// Field edit keybinds
+	save := fmt.Sprintf("(%s) Save", fmt.Sprintf(ActionColor, "Enter"))
+	cancel := fmt.Sprintf("(%s) Cancel", fmt.Sprintf(ActionColor, "Esc"))
+
+	fmt.Fprintf(v5, "%-40s%-40s\n", save, cancel)
+
+	return nil
+}
+
+// updateDMRelaysKeybindsView updates the keybinds view (v5) with keybinds for the DM relays list
+func updateDMRelaysKeybindsView(g *gocui.Gui) error {
+	v5, err := g.View("v5")
+	if err != nil {
+		return err
+	}
+
+	v5.Clear()
+	// Use the action highlight color (orange-yellow #ffaf00) instead of cyan
+	ActionColor := fmt.Sprintf("\033[38;2;%d;%d;%dm%%s\033[0m", 0xff, 0xaf, 0x00)
+
+	// DM relays keybinds
+	add := fmt.Sprintf("(%s)ew Relay", fmt.Sprintf(ActionColor, "n"))
+	delete := fmt.Sprintf("(%s)elete Relay", fmt.Sprintf(ActionColor, "d"))
+	save := fmt.Sprintf("(%s)ave Changes", fmt.Sprintf(ActionColor, "s"))
+	cancel := fmt.Sprintf("(%s) Cancel", fmt.Sprintf(ActionColor, "Esc"))
+
+	fmt.Fprintf(v5, "%-40s%-40s\n", add, delete)
+	fmt.Fprintf(v5, "%-40s%-40s\n", save, cancel)
+
+	return nil
+}
+
+// updateAddDMRelayKeybindsView updates the keybinds view (v5) with keybinds for adding a new DM relay
+func updateAddDMRelayKeybindsView(g *gocui.Gui) error {
+	v5, err := g.View("v5")
+	if err != nil {
+		return err
+	}
+
+	v5.Clear()
+	// Use the action highlight color (orange-yellow #ffaf00) instead of cyan
+	ActionColor := fmt.Sprintf("\033[38;2;%d;%d;%dm%%s\033[0m", 0xff, 0xaf, 0x00)
+
+	// Add DM relay keybinds
+	save := fmt.Sprintf("(%s) Save", fmt.Sprintf(ActionColor, "Enter"))
+	cancel := fmt.Sprintf("(%s) Cancel", fmt.Sprintf(ActionColor, "Esc"))
+
+	fmt.Fprintf(v5, "%-40s%-40s\n", save, cancel)
 
 	return nil
 }

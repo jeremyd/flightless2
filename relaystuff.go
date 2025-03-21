@@ -183,7 +183,6 @@ func doDMRelays(db *gorm.DB, ctx context.Context) {
 				}()
 			}
 		} else {
-			// Connect with auth support
 			var err error
 			relay, err = nostr.RelayConnect(ctx, dmr.Url)
 			if err != nil {

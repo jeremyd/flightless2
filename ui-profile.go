@@ -15,7 +15,8 @@ import (
 // profileMenu opens a profile menu for viewing and editing profile metadata and DM relays
 func profileMenu(g *gocui.Gui, v *gocui.View) error {
 	maxX, maxY := g.Size()
-	if v, err := g.SetView("profile", maxX/2-40, maxY/2-10, maxX/2+40, maxY/2+10, 0); err != nil {
+	// Position the view from the top of the screen (y=0) to above the keybinds view (v5)
+	if v, err := g.SetView("profile", maxX/2-40, 0, maxX/2+40, maxY-7, 0); err != nil {
 		if !errors.Is(err, gocui.ErrUnknownView) {
 			return err
 		}
@@ -31,7 +32,7 @@ func profileMenu(g *gocui.Gui, v *gocui.View) error {
 		var metadata Metadata
 		DB.Where("pubkey_hex = ?", account.Pubkey).First(&metadata)
 
-		v.Title = "Profile Menu - [e]dit Metadata - [d]m Relays - [ESC]Cancel"
+		v.Title = "Profile Menu"
 		v.Highlight = true
 		v.SelBgColor = gocui.ColorGreen
 		v.SelFgColor = gocui.ColorBlack
@@ -61,7 +62,20 @@ func profileMenu(g *gocui.Gui, v *gocui.View) error {
 		if _, err := g.SetCurrentView("profile"); err != nil {
 			return err
 		}
+
+		// Update the v5 keybinds view
+		updateProfileKeybindsView(g)
 	}
+	return nil
+}
+
+// exitProfileMenu closes the profile menu and returns to the main view
+func exitProfileMenu(g *gocui.Gui, v *gocui.View) error {
+	g.DeleteView("profile")
+	// Restore the main keybinds view
+	updateKeybindsView(g)
+	// Set focus back to the main view (v2)
+	g.SetCurrentView("v2")
 	return nil
 }
 
@@ -69,7 +83,8 @@ func profileMenu(g *gocui.Gui, v *gocui.View) error {
 func editProfileMetadata(g *gocui.Gui, v *gocui.View) error {
 	maxX, maxY := g.Size()
 	g.DeleteView("profile")
-	if v, err := g.SetView("profilefields", maxX/2-40, maxY/2-10, maxX/2+40, maxY/2+10, 0); err != nil {
+	// Position the view from the top of the screen (y=0) to above the keybinds view (v5)
+	if v, err := g.SetView("profilefields", maxX/2-40, 0, maxX/2+40, maxY-7, 0); err != nil {
 		if !errors.Is(err, gocui.ErrUnknownView) {
 			return err
 		}
@@ -85,7 +100,7 @@ func editProfileMetadata(g *gocui.Gui, v *gocui.View) error {
 		var metadata Metadata
 		DB.Where("pubkey_hex = ?", account.Pubkey).First(&metadata)
 
-		v.Title = "Select Field to Edit - [Enter]Select - [ESC]Cancel"
+		v.Title = "Select Field to Edit"
 		v.Highlight = true
 		v.SelBgColor = gocui.ColorGreen
 		v.SelFgColor = gocui.ColorBlack
@@ -104,6 +119,9 @@ func editProfileMetadata(g *gocui.Gui, v *gocui.View) error {
 		if _, err := g.SetCurrentView("profilefields"); err != nil {
 			return err
 		}
+
+		// Update the v5 keybinds view
+		updateProfileFieldsKeybindsView(g)
 	}
 	return nil
 }
@@ -137,11 +155,15 @@ func selectProfileField(g *gocui.Gui, v *gocui.View) error {
 		return editSingleField(g, "Website", metadata.Website)
 	case 5: // Lightning Address
 		return editSingleField(g, "Lightning Address", metadata.Lud16)
-	case 6: // Save All Changes
+	case 7: // Save All Changes
 		return saveProfileChanges(g, v)
-	case 7: // Cancel
+	case 8: // Cancel
 		g.DeleteView("profilefields")
-		return profileMenu(g, v)
+		// Restore the main keybinds view
+		updateKeybindsView(g)
+		// Set focus back to the main view (v2)
+		g.SetCurrentView("v2")
+		return nil
 	}
 
 	return nil
@@ -154,12 +176,13 @@ func editSingleField(g *gocui.Gui, fieldName string, currentValue string) error 
 	maxX, maxY := g.Size()
 	g.DeleteView("profilefields")
 
-	if v, err := g.SetView("fieldedit", maxX/2-40, maxY/2-3, maxX/2+40, maxY/2+3, 0); err != nil {
+	// Position the view from the top of the screen (y=0) to above the keybinds view (v5)
+	if v, err := g.SetView("fieldedit", maxX/2-40, 0, maxX/2+40, maxY-7, 0); err != nil {
 		if !errors.Is(err, gocui.ErrUnknownView) {
 			return err
 		}
 
-		v.Title = fmt.Sprintf("Edit %s - [Enter]Save - [ESC]Cancel", fieldName)
+		v.Title = fmt.Sprintf("Edit %s", fieldName)
 		v.Highlight = false
 		v.Editable = true
 		v.KeybindOnEdit = true
@@ -177,6 +200,9 @@ func editSingleField(g *gocui.Gui, fieldName string, currentValue string) error 
 		if _, err := g.SetCurrentView("fieldedit"); err != nil {
 			return err
 		}
+
+		// Update the v5 keybinds view
+		updateFieldEditKeybindsView(g)
 	}
 	return nil
 }
@@ -205,22 +231,6 @@ func saveSingleField(g *gocui.Gui, v *gocui.View) error {
 	// Get metadata for the active account
 	var metadata Metadata
 	DB.Where("pubkey_hex = ?", account.Pubkey).First(&metadata)
-
-	// Update the appropriate field in memory
-	switch fieldName {
-	case "Name":
-		metadata.Name = newValue
-	case "Display Name":
-		metadata.DisplayName = newValue
-	case "About":
-		metadata.About = newValue
-	case "NIP-05":
-		metadata.Nip05 = newValue
-	case "Website":
-		metadata.Website = newValue
-	case "Lightning Address":
-		metadata.Lud16 = newValue
-	}
 
 	// Update the database
 	updates := map[string]interface{}{}
@@ -252,71 +262,25 @@ func saveSingleField(g *gocui.Gui, v *gocui.View) error {
 		TheLog.Printf("Error updating metadata_updated_at in database: %v", err)
 	}
 
-	// Publish the updated metadata to relays
-	// Create metadata map for the event
-	metadataMap := map[string]string{
-		"name":         metadata.Name,
-		"display_name": metadata.DisplayName,
-		"about":        metadata.About,
-		"nip05":        metadata.Nip05,
-		"website":      metadata.Website,
-		"lud16":        metadata.Lud16,
-	}
-
-	// Convert to JSON
-	jsonContent, err := json.Marshal(metadataMap)
-	if err != nil {
-		TheLog.Printf("Error creating metadata JSON: %v", err)
-		return err
-	}
-
-	// Get the private key
-	sk := Decrypt(string(Password), account.Privatekey)
-
-	// Create a new metadata event
-	ev := nostr.Event{
-		Kind:      0,
-		PubKey:    account.Pubkey,
-		CreatedAt: nostr.Timestamp(time.Now().Unix()),
-		Content:   string(jsonContent),
-	}
-
-	// Sign the event
-	err = ev.Sign(sk)
-	if err != nil {
-		TheLog.Printf("Error signing metadata event: %v", err)
-		return err
-	}
-
-	// Publish to relays
-	TheLog.Printf("Publishing metadata to relays after updating %s...", fieldName)
-	for _, relay := range nostrRelays {
-		ctx := context.TODO()
-		if !relay.IsConnected() {
-			TheLog.Printf("relay was not connected %s, reconnecting", relay.URL)
-			relay.Connect(ctx)
-		}
-		TheLog.Printf("publishing to %s", relay.URL)
-		err := relay.Publish(ctx, ev)
-		if err != nil {
-			TheLog.Printf("Error publishing metadata to relay %s: %v", relay.URL, err)
-		} else {
-			TheLog.Printf("published!")
-		}
-	}
+	// JUST update the database here..
+	// publish is a separate option
 
 	g.DeleteView("fieldedit")
+	// If returning to the profile fields menu, update those keybinds
 	return editProfileMetadata(g, v)
 }
 
-// cancelFieldEdit cancels editing a single field
+// cancelFieldEdit cancels editing a field and returns to the profile fields menu
 func cancelFieldEdit(g *gocui.Gui, v *gocui.View) error {
 	g.DeleteView("fieldedit")
+	// Return to the profile fields menu
 	return editProfileMetadata(g, v)
 }
 
 // saveProfileChanges saves all profile changes and publishes to relays
 func saveProfileChanges(g *gocui.Gui, v *gocui.View) error {
+	TheLog.Printf("SANITY")
+
 	// Get active account
 	var account Account
 	DB.Where("active = ?", true).First(&account)
@@ -376,17 +340,25 @@ func saveProfileChanges(g *gocui.Gui, v *gocui.View) error {
 		err := relay.Publish(ctx, ev)
 		if err != nil {
 			TheLog.Printf("Error publishing metadata to relay %s: %v", relay.URL, err)
+		} else {
+			TheLog.Printf("Published metadata to relay: %s", relay.URL)
 		}
 	}
 
+	// Delete the profile fields view and return to the main view
 	g.DeleteView("profilefields")
-	return profileMenu(g, v)
+	// Restore the main keybinds view
+	updateKeybindsView(g)
+	return nil
 }
 
 // cancelProfileEdit cancels profile metadata editing
 func cancelProfileEdit(g *gocui.Gui, v *gocui.View) error {
 	g.DeleteView("profilefields")
-	profileMenu(g, v)
+	// Restore the main keybinds view
+	updateKeybindsView(g)
+	// Set focus back to the main view (v2)
+	g.SetCurrentView("v2")
 	return nil
 }
 
@@ -394,7 +366,8 @@ func cancelProfileEdit(g *gocui.Gui, v *gocui.View) error {
 func editDMRelays(g *gocui.Gui, v *gocui.View) error {
 	maxX, maxY := g.Size()
 	g.DeleteView("profile")
-	if v, err := g.SetView("dmrelayslist", maxX/2-40, maxY/2-10, maxX/2+40, maxY/2+10, 0); err != nil {
+	// Position the view from the top of the screen (y=0) to above the keybinds view (v5)
+	if v, err := g.SetView("dmrelayslist", maxX/2-40, 0, maxX/2+40, maxY-7, 0); err != nil {
 		if !errors.Is(err, gocui.ErrUnknownView) {
 			return err
 		}
@@ -410,151 +383,110 @@ func editDMRelays(g *gocui.Gui, v *gocui.View) error {
 		var dmRelays []DMRelay
 		DB.Where("pubkey_hex = ?", account.Pubkey).Find(&dmRelays)
 
-		v.Title = "DM Relays - [n]ew - [d]elete - [s]ave - [ESC]Cancel"
+		v.Title = "DM Relays"
 		v.Highlight = true
 		v.SelBgColor = gocui.ColorGreen
 		v.SelFgColor = gocui.ColorBlack
 		v.Editable = false
 
-		// Display instructions
-		fmt.Fprintf(v, "These relays will be used for direct messages.\n\n")
-
-		// List existing DM relays
-		for i, relay := range dmRelays {
-			fmt.Fprintf(v, "%d. %s\n", i+1, relay.Url)
-		}
-
+		// Display DM relays
 		if len(dmRelays) == 0 {
-			fmt.Fprintf(v, "No DM relays configured.\n")
+			fmt.Fprintf(v, "No DM relays configured\n")
+		} else {
+			for _, relay := range dmRelays {
+				fmt.Fprintf(v, "%s\n", relay.Url)
+			}
 		}
 
 		if _, err := g.SetCurrentView("dmrelayslist"); err != nil {
 			return err
 		}
+
+		// Update the v5 keybinds view
+		updateDMRelaysKeybindsView(g)
 	}
+	return nil
+}
+
+// exitDMRelaysList closes the DM relays list and returns to the main view
+func exitDMRelaysList(g *gocui.Gui, v *gocui.View) error {
+	g.DeleteView("dmrelayslist")
+	// Restore the main keybinds view
+	updateKeybindsView(g)
 	return nil
 }
 
 // addDMRelay opens a form to add a new DM relay
 func addDMRelay(g *gocui.Gui, v *gocui.View) error {
 	maxX, maxY := g.Size()
-	if v, err := g.SetView("adddmrelay", maxX/2-30, maxY/2-2, maxX/2+30, maxY/2+2, 0); err != nil {
+	g.DeleteView("dmrelayslist")
+	// Position the view from the top of the screen (y=0) to above the keybinds view (v5)
+	if v, err := g.SetView("adddmrelay", maxX/2-40, 0, maxX/2+40, maxY-7, 0); err != nil {
 		if !errors.Is(err, gocui.ErrUnknownView) {
 			return err
 		}
 
-		v.Title = "Add a new DM Relay - [Enter]Save - [ESC]Cancel"
+		v.Title = "Add DM Relay"
+		v.Highlight = false
 		v.Editable = true
 		v.KeybindOnEdit = true
 		v.Wrap = true
 
-		// Make cursor visible
-		v.Highlight = true
-		v.SelFgColor = gocui.ColorWhite
-		v.SelBgColor = gocui.ColorBlue
+		// Display instructions
+		fmt.Fprintf(v, "Enter relay URL (e.g., wss://relay.example.com)\n")
 
-		fmt.Fprintf(v, "wss://")
-
-		// Set cursor position after the "wss://" prefix
-		v.SetCursor(6, 0)
+		// Set cursor
+		v.SetOrigin(0, 0)
+		v.SetCursor(0, 1)
 
 		if _, err := g.SetCurrentView("adddmrelay"); err != nil {
 			return err
 		}
+
+		// Update the v5 keybinds view
+		updateAddDMRelayKeybindsView(g)
 	}
 	return nil
 }
 
-// saveNewDMRelay saves a new DM relay
+// saveNewDMRelay saves a new DM relay and returns to the DM relays list
 func saveNewDMRelay(g *gocui.Gui, v *gocui.View) error {
-	if v != nil {
-		// Get the relay URL
-		relayURL := strings.TrimSpace(v.Buffer())
-
-		// Validate the URL
-		if !validateRelayURL(relayURL) {
-			// Show error message
-			maxX, maxY := g.Size()
-			if msgView, err := g.SetView("errormsg", maxX/2-20, maxY/2+3, maxX/2+20, maxY/2+5, 0); err != nil {
-				if !errors.Is(err, gocui.ErrUnknownView) {
-					return err
-				}
-				msgView.Title = "Error"
-				fmt.Fprintf(msgView, "Invalid relay URL format")
-				if _, err := g.SetCurrentView("errormsg"); err != nil {
-					return err
-				}
-
-				// Add keybinding to dismiss error
-				if err := g.SetKeybinding("errormsg", gocui.KeyEnter, gocui.ModNone, closeErrorMsg); err != nil {
-					return err
-				}
-				if err := g.SetKeybinding("errormsg", gocui.KeyEsc, gocui.ModNone, closeErrorMsg); err != nil {
-					return err
-				}
-			}
-			return nil
-		}
-
-		// Get active account
-		var account Account
-		DB.Where("active = ?", true).First(&account)
-		if account.Pubkey == "" {
-			g.DeleteView("addrelay")
-			return fmt.Errorf("no active account found")
-		}
-
-		// Check if relay already exists
-		var existingRelay DMRelay
-		result := DB.Where("pubkey_hex = ? AND url = ?", account.Pubkey, relayURL).First(&existingRelay)
-		if result.Error == nil {
-			// Relay already exists, show error
-			maxX, maxY := g.Size()
-			if msgView, err := g.SetView("errormsg", maxX/2-20, maxY/2+3, maxX/2+20, maxY/2+5, 0); err != nil {
-				if !errors.Is(err, gocui.ErrUnknownView) {
-					return err
-				}
-				msgView.Title = "Error"
-				fmt.Fprintf(msgView, "Relay already exists")
-				if _, err := g.SetCurrentView("errormsg"); err != nil {
-					return err
-				}
-
-				// Add keybinding to dismiss error
-				if err := g.SetKeybinding("errormsg", gocui.KeyEnter, gocui.ModNone, closeErrorMsg); err != nil {
-					return err
-				}
-				if err := g.SetKeybinding("errormsg", gocui.KeyEsc, gocui.ModNone, closeErrorMsg); err != nil {
-					return err
-				}
-			}
-			return nil
-		}
-
-		// Add the relay to the database
-		dmRelay := DMRelay{
-			PubkeyHex: account.Pubkey,
-			Url:       relayURL,
-		}
-		if err := DB.Create(&dmRelay).Error; err != nil {
-			TheLog.Printf("Error saving DM relay to database: %v", err)
-		}
-
-		// Close the add relay view
-		g.DeleteView("adddmrelay")
-		editDMRelays(g, v)
-		g.SetCurrentView("dmrelayslist")
-
+	// Get the relay URL from the input
+	relayUrl := strings.TrimSpace(v.Buffer())
+	if relayUrl == "" {
 		return nil
 	}
-	return nil
+
+	// Get active account
+	var account Account
+	DB.Where("active = ?", true).First(&account)
+	if account.Pubkey == "" {
+		return fmt.Errorf("no active account found")
+	}
+
+	// Create a new DM relay
+	dmRelay := DMRelay{
+		PubkeyHex: account.Pubkey,
+		Url:       relayUrl,
+	}
+
+	// Save to database
+	if err := DB.Create(&dmRelay).Error; err != nil {
+		TheLog.Printf("Error creating DM relay: %v", err)
+		return err
+	}
+
+	// Delete the add relay view and return to the DM relays list
+	g.DeleteView("adddmrelay")
+	// Return to the DM relays list with the correct keybinds
+	return editDMRelays(g, v)
 }
 
 // cancelAddDMRelay cancels adding a new DM relay
 func cancelAddDMRelay(g *gocui.Gui, v *gocui.View) error {
-	g.DeleteView("addrelay")
-	g.SetCurrentView("dmrelayslist")
-	return nil
+	g.DeleteView("adddmrelay")
+	// Return to the DM relays list
+	return editDMRelays(g, v)
 }
 
 // closeErrorMsg closes the error message view
@@ -604,7 +536,7 @@ func deleteDMRelay(g *gocui.Gui, v *gocui.View) error {
 	return nil
 }
 
-// saveDMRelaysChanges saves all DM relay changes and publishes to relays
+// saveDMRelaysChanges saves changes to DM relays and publishes to relays
 func saveDMRelaysChanges(g *gocui.Gui, v *gocui.View) error {
 	// Get active account
 	var account Account
@@ -617,54 +549,29 @@ func saveDMRelaysChanges(g *gocui.Gui, v *gocui.View) error {
 	var dmRelays []DMRelay
 	DB.Where("pubkey_hex = ?", account.Pubkey).Find(&dmRelays)
 
-	// Get the private key
-	sk := Decrypt(string(Password), account.Privatekey)
+	// TODO: Implement saving DM relays changes
 
-	// Create a new DM relay list event
-	ev := nostr.Event{
-		Kind:      10050,
-		PubKey:    account.Pubkey,
-		CreatedAt: nostr.Timestamp(time.Now().Unix()),
-		Content:   "",
-	}
-
-	// Add relay tags
-	for _, relay := range dmRelays {
-		ev.Tags = append(ev.Tags, nostr.Tag{"relay", relay.Url})
-	}
-
-	// Sign the event
-	err := ev.Sign(sk)
-	if err != nil {
-		TheLog.Printf("Error signing DM relay list event: %v", err)
-		return err
-	}
-
-	// Publish to relays
-	TheLog.Println("Publishing DM relay list to relays...")
-	for _, relay := range nostrRelays {
-		ctx := context.Background()
-		err := relay.Publish(ctx, ev)
-		if err != nil {
-			TheLog.Printf("Error publishing DM relay list to relay %s: %v", relay.URL, err)
-		}
-	}
-
-	// we also need to start the stream from this new set of DM relays...
-
+	// Delete the DM relays list view and return to the main view
 	g.DeleteView("dmrelayslist")
-	return profileMenu(g, v)
+	// Restore the main keybinds view
+	updateKeybindsView(g)
+	return nil
 }
 
 // cancelDMRelaysEdit cancels DM relays editing
 func cancelDMRelaysEdit(g *gocui.Gui, v *gocui.View) error {
 	g.DeleteView("dmrelayslist")
-	return profileMenu(g, v)
+	// Restore the main keybinds view
+	updateKeybindsView(g)
+	return nil
 }
 
 // cancelProfile closes the profile menu
 func cancelProfile(g *gocui.Gui, v *gocui.View) error {
 	g.DeleteView("profile")
+	// Restore the main keybinds view
+	updateKeybindsView(g)
+	// Set focus back to the main view (v2)
 	g.SetCurrentView("v2")
 	return nil
 }
