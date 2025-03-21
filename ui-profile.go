@@ -366,6 +366,7 @@ func cancelProfileEdit(g *gocui.Gui, v *gocui.View) error {
 func editDMRelays(g *gocui.Gui, v *gocui.View) error {
 	maxX, maxY := g.Size()
 	g.DeleteView("profile")
+	g.DeleteView("dmrelayslist")
 	// Position the view from the top of the screen (y=0) to above the keybinds view (v5)
 	if v, err := g.SetView("dmrelayslist", maxX/2-40, 0, maxX/2+40, maxY-7, 0); err != nil {
 		if !errors.Is(err, gocui.ErrUnknownView) {
@@ -431,9 +432,6 @@ func addDMRelay(g *gocui.Gui, v *gocui.View) error {
 		v.Editable = true
 		v.KeybindOnEdit = true
 		v.Wrap = true
-
-		// Display instructions
-		fmt.Fprintf(v, "Enter relay URL (e.g., wss://relay.example.com)\n")
 
 		// Set cursor
 		v.SetOrigin(0, 0)
@@ -502,23 +500,8 @@ func deleteDMRelay(g *gocui.Gui, v *gocui.View) error {
 		_, cy := v.Cursor()
 		lines := strings.Split(v.Buffer(), "\n")
 
-		// Skip the header lines
-		cy = cy - 2
-		if cy < 0 || cy >= len(lines)-2 {
-			return nil
-		}
-
-		// Extract the relay URL from the line
-		line := lines[cy+2]
-		if !strings.Contains(line, ".") {
-			return nil
-		}
-
-		parts := strings.SplitN(line, ". ", 2)
-		if len(parts) < 2 {
-			return nil
-		}
-		relayURL := parts[1]
+		relayURL := lines[cy]
+		TheLog.Printf("deleting DM relay %s", relayURL)
 
 		// Get active account
 		var account Account
@@ -528,7 +511,11 @@ func deleteDMRelay(g *gocui.Gui, v *gocui.View) error {
 		}
 
 		// Delete the relay from the database
-		DB.Where("pubkey_hex = ? AND url = ?", account.Pubkey, relayURL).Delete(&DMRelay{})
+		rows := DB.Where("pubkey_hex = ? AND url = ?", account.Pubkey, relayURL).Delete(&DMRelay{}).RowsAffected
+		if rows == 0 {
+			TheLog.Printf("no rows deleted!")
+
+		}
 
 		// Refresh the relay list
 		return editDMRelays(g, v)
@@ -549,7 +536,42 @@ func saveDMRelaysChanges(g *gocui.Gui, v *gocui.View) error {
 	var dmRelays []DMRelay
 	DB.Where("pubkey_hex = ?", account.Pubkey).Find(&dmRelays)
 
-	// TODO: Implement saving DM relays changes
+	// Create relay list for kind 10050 event using tags
+	var tags []nostr.Tag
+	for _, relay := range dmRelays {
+		tags = append(tags, nostr.Tag{"relay", relay.Url})
+	}
+
+	// Get the private key
+	sk := Decrypt(string(Password), account.Privatekey)
+
+	// Create a new relay list event (kind 10050)
+	ev := nostr.Event{
+		Kind:      10050,
+		PubKey:    account.Pubkey,
+		CreatedAt: nostr.Timestamp(time.Now().Unix()),
+		Content:   "", // Empty content as per the format
+		Tags:      tags,
+	}
+
+	// Sign the event
+	err := ev.Sign(sk)
+	if err != nil {
+		TheLog.Printf("Error signing relay list event: %v", err)
+		return err
+	}
+
+	// Publish to relays
+	TheLog.Println("Publishing DM relay list to relays...")
+	for _, relay := range nostrRelays {
+		ctx := context.Background()
+		err := relay.Publish(ctx, ev)
+		if err != nil {
+			TheLog.Printf("Error publishing relay list to relay %s: %v", relay.URL, err)
+		} else {
+			TheLog.Printf("Published relay list to relay: %s", relay.URL)
+		}
+	}
 
 	// Delete the DM relays list view and return to the main view
 	g.DeleteView("dmrelayslist")
