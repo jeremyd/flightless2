@@ -213,14 +213,16 @@ func doDMRelays(db *gorm.DB, ctx context.Context) {
 		}
 
 		// create a subscription and submit to relay
-		if sub, err := relay.Subscribe(ctx, dmFilters); err != nil {
-			TheLog.Printf("failed to subscribe to relay: %s, %v\n", dmr.Url, err)
-		} else {
-			TheLog.Printf("subscribed to dm feed from relay: %s for pubkey: %s\n", dmr.Url, pubkey)
-			nostrSubs = append(nostrSubs, sub)
-			go func() {
-				processSub(sub, relay, pubkey)
-			}()
+		if !preExistingConnection {
+			if sub, err := relay.Subscribe(ctx, dmFilters); err != nil {
+				TheLog.Printf("failed to subscribe to relay: %s, %v\n", dmr.Url, err)
+			} else {
+				TheLog.Printf("subscribed to dm feed from relay: %s for pubkey: %s\n", dmr.Url, pubkey)
+				nostrSubs = append(nostrSubs, sub)
+				go func() {
+					processSub(sub, relay, pubkey)
+				}()
+			}
 		}
 	}
 }
@@ -624,11 +626,13 @@ func processSub(sub *nostr.Subscription, relay *nostr.Relay, pubkey string) {
 					}
 
 					m = ChatMessage{
-						FromPubkey: k14.PubKey,
-						ToPubkey:   useThisPtag,
-						Content:    k14.Content,
-						EventId:    ev.ID,
-						Timestamp:  time.Unix(int64(k14.CreatedAt), 0),
+						FromPubkey:        k14.PubKey,
+						ToPubkey:          useThisPtag,
+						Content:           k14.Content,
+						EventId:           ev.ID,
+						Timestamp:         time.Unix(int64(k14.CreatedAt), 0),
+						ReceivedFromRelay: relay.URL,
+						AccountID:         account.ID,
 					}
 
 					TheLog.Printf("Creating chat message: %+v", m)

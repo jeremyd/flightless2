@@ -350,7 +350,7 @@ func postInput(g *gocui.Gui, v *gocui.View) error {
 								TheLog.Printf("Error publishing giftwrap to existing relay %s: %v", relayUrl, err)
 
 							} else {
-								TheLog.Printf("Published giftwrap to existing relay %s", relayUrl)
+								TheLog.Printf("Published giftwrap to existing relay %s, event_id=%s", relayUrl, ev.ID)
 							}
 						}
 						isConnected = true
@@ -388,7 +388,7 @@ func postInput(g *gocui.Gui, v *gocui.View) error {
 						if err := relay.Publish(ctx, ev); err != nil {
 							TheLog.Printf("Error publishing giftwrap to new relay %s: %v", relayUrl, err)
 						} else {
-							TheLog.Printf("Published giftwrap to new relay %s", relayUrl)
+							TheLog.Printf("Published giftwrap to new relay %s, eventID=%s", relayUrl, ev.ID)
 						}
 					}
 					// no we want to disconnect from the relay i believe?

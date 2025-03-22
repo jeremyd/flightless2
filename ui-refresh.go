@@ -54,11 +54,10 @@ func refreshV2Conversations(g *gocui.Gui, v *gocui.View) error {
 	// get the active account pubkey
 	account := Account{}
 	DB.Where("active = ?", true).First(&account)
-	pubkey := account.Pubkey
 
 	// this does not show, messages that we sent ..
 	var allMessages []ChatMessage
-	DB.Where("to_pubkey = ?", pubkey).Find(&allMessages)
+	DB.Where("account_id = ?", account.ID).Find(&allMessages)
 
 	// group the messages by from_pubkey
 	conversations := make(map[string][]ChatMessage)
@@ -349,11 +348,11 @@ func refreshV3(g *gocui.Gui, cy int) error {
 	DB.First(&account, "active = ?", true)
 	var toMe []ChatMessage
 	var fromMe []ChatMessage
-	if err := DB.Find(&toMe, "from_pubkey = ? AND to_pubkey = ?", displayV2Meta[cy].PubkeyHex, account.Pubkey).Error; err != nil {
+	if err := DB.Find(&toMe, "from_pubkey = ? AND to_pubkey = ? AND account_id = ?", displayV2Meta[cy].PubkeyHex, account.Pubkey, account.ID).Error; err != nil {
 		TheLog.Printf("error getting conversation messages: %s", err)
 		return err
 	}
-	if err := DB.Find(&fromMe, "from_pubkey = ? AND to_pubkey = ?", account.Pubkey, displayV2Meta[cy].PubkeyHex).Error; err != nil {
+	if err := DB.Find(&fromMe, "from_pubkey = ? AND to_pubkey = ? AND account_id = ?", account.Pubkey, displayV2Meta[cy].PubkeyHex, account.ID).Error; err != nil {
 		TheLog.Printf("error getting conversation messages: %s", err)
 		return err
 	}
@@ -397,6 +396,8 @@ func refreshV4(g *gocui.Gui, cursor int) error {
 		return err
 	}
 	v4.Clear()
+	v4.Wrap = true
+	v4.Autoscroll = true
 
 	// Apply current theme colors
 	v4.BgColor = uiColorBg
@@ -446,6 +447,24 @@ func refreshV4(g *gocui.Gui, cursor int) error {
 		}
 		fmt.Fprintf(v4, "%s %s\n", shortStatus, relayStatus.Url)
 	}
+
+	/*
+		fmt.Fprintf(v4, "nostrRelays\n")
+		for _, r := range nostrRelays {
+			fmt.Fprintf(v4, "%s:%v\n", r.URL, r.IsConnected())
+		}
+
+		fmt.Fprintf(v4, "num subs %d\n", len(nostrSubs))
+		for _, s := range nostrSubs {
+
+			fmt.Fprintf(v4, "numfilters: %d", len(s.Filters))
+			for _, f := range s.Filters {
+				fmt.Fprintf(v4, "kinds %v\n", f.Kinds)
+			}
+
+			//fmt.Fprintf(v4, "%s, %v\n", s.GetID(), s.Filters)
+		}
+	*/
 
 	return nil
 }

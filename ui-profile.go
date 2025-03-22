@@ -34,9 +34,11 @@ func profileMenu(g *gocui.Gui, v *gocui.View) error {
 
 		v.Title = "Profile Menu"
 		v.Highlight = true
-		v.SelBgColor = gocui.ColorGreen
-		v.SelFgColor = gocui.ColorBlack
+		v.SelBgColor = activeTheme.HighlightBg
+		v.SelFgColor = activeTheme.HighlightFg
 		v.Editable = false
+		v.BgColor = activeTheme.Bg
+		v.FgColor = activeTheme.Fg
 
 		// Display profile information
 		fmt.Fprintf(v, "Profile for: %s\n\n", account.PubkeyNpub)
@@ -83,6 +85,7 @@ func exitProfileMenu(g *gocui.Gui, v *gocui.View) error {
 func editProfileMetadata(g *gocui.Gui, v *gocui.View) error {
 	maxX, maxY := g.Size()
 	g.DeleteView("profile")
+	g.DeleteView("profilefields")
 	// Position the view from the top of the screen (y=0) to above the keybinds view (v5)
 	if v, err := g.SetView("profilefields", maxX/2-40, 0, maxX/2+40, maxY-7, 0); err != nil {
 		if !errors.Is(err, gocui.ErrUnknownView) {
@@ -102,9 +105,11 @@ func editProfileMetadata(g *gocui.Gui, v *gocui.View) error {
 
 		v.Title = "Select Field to Edit"
 		v.Highlight = true
-		v.SelBgColor = gocui.ColorGreen
-		v.SelFgColor = gocui.ColorBlack
+		v.SelBgColor = activeTheme.HighlightBg
+		v.SelFgColor = activeTheme.HighlightFg
 		v.Editable = false
+		v.BgColor = activeTheme.Bg
+		v.FgColor = activeTheme.Fg
 
 		// Display fields for selection
 		fmt.Fprintf(v, "1. Name: %s\n", metadata.Name)
@@ -142,6 +147,8 @@ func selectProfileField(g *gocui.Gui, v *gocui.View) error {
 	DB.Where("pubkey_hex = ?", account.Pubkey).First(&metadata)
 
 	// Handle selection based on cursor position
+
+	g.DeleteView("profilefields")
 	switch cy {
 	case 0: // Name
 		return editSingleField(g, "Name", metadata.Name)
@@ -187,6 +194,8 @@ func editSingleField(g *gocui.Gui, fieldName string, currentValue string) error 
 		v.Editable = true
 		v.KeybindOnEdit = true
 		v.Wrap = true
+		v.BgColor = activeTheme.Bg
+		v.FgColor = activeTheme.Fg
 
 		// Store the field name for reference when saving
 		v.SetOrigin(0, 0)
@@ -228,10 +237,6 @@ func saveSingleField(g *gocui.Gui, v *gocui.View) error {
 		return fmt.Errorf("no active account found")
 	}
 
-	// Get metadata for the active account
-	var metadata Metadata
-	DB.Where("pubkey_hex = ?", account.Pubkey).First(&metadata)
-
 	// Update the database
 	updates := map[string]interface{}{}
 
@@ -248,6 +253,12 @@ func saveSingleField(g *gocui.Gui, v *gocui.View) error {
 		updates["website"] = newValue
 	case "Lightning Address":
 		updates["lud16"] = newValue
+	}
+
+	if err := DB.Where("pubkey_hex = ?", account.Pubkey).First(&Metadata{}).Error; err != nil {
+		DB.Create(&Metadata{
+			PubkeyHex: account.Pubkey,
+		})
 	}
 
 	if len(updates) > 0 {
@@ -386,9 +397,11 @@ func editDMRelays(g *gocui.Gui, v *gocui.View) error {
 
 		v.Title = "DM Relays"
 		v.Highlight = true
-		v.SelBgColor = gocui.ColorGreen
-		v.SelFgColor = gocui.ColorBlack
+		v.SelBgColor = activeTheme.HighlightBg
+		v.SelFgColor = activeTheme.HighlightFg
 		v.Editable = false
+		v.BgColor = activeTheme.Bg
+		v.FgColor = activeTheme.Fg
 
 		// Display DM relays
 		if len(dmRelays) == 0 {
@@ -432,6 +445,8 @@ func addDMRelay(g *gocui.Gui, v *gocui.View) error {
 		v.Editable = true
 		v.KeybindOnEdit = true
 		v.Wrap = true
+		v.BgColor = activeTheme.Bg
+		v.FgColor = activeTheme.Fg
 
 		// Set cursor
 		v.SetOrigin(0, 0)

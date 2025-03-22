@@ -57,7 +57,7 @@ func main() {
 			//"wss://nostr-dev.wellorder.net",
 			//"wss://relay.nostr.info",
 			"wss://profiles.nostr1.com",
-			"wss://nostr21.com",
+			//"wss://nostr21.com",
 		}
 	} else {
 		for _, relayStatus := range relayStatuses {
@@ -112,7 +112,7 @@ func main() {
 							foundit = true
 							r.Close()
 							TheLog.Printf("Closed relay connection: %s", r.URL)
-							
+
 							// Remove from nostrRelays slice
 							nostrRelays = append(nostrRelays[:i], nostrRelays[i+1:]...)
 							TheLog.Printf("Removed relay from nostrRelays slice")

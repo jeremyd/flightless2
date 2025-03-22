@@ -11,11 +11,12 @@ import (
 )
 
 type Account struct {
-	Pubkey       string `gorm:"primaryKey;size:65"`
+	ID           int64  `gorm:"primaryKey;autoIncrement"`
+	Pubkey       string `gorm:"size:65"`
 	PubkeyNpub   string `gorm:"size:65"`
 	Privatekey   string `gorm:"size:1024"` // encrypted
 	Active       bool
-	ChatMessages []ChatMessage `gorm:"foreignKey:ToPubkey;references:Pubkey"`
+	ChatMessages []ChatMessage `gorm:"foreignKey:AccountID;references:ID"`
 }
 
 type Login struct {
@@ -60,12 +61,14 @@ type RelayStatus struct {
 }
 
 type ChatMessage struct {
-	ID         int64     `gorm:"primaryKey;autoIncrement"`
-	EventId    string    `gorm:"size:65"`
-	FromPubkey string    `gorm:"size:65"`
-	ToPubkey   string    `gorm:"size:65"`
-	Content    string    `gorm:"size:65535"`
-	Timestamp  time.Time `gorm:"autoUpdateTime"`
+	ID                int64 `gorm:"primaryKey;autoIncrement"`
+	AccountID         int64
+	EventId           string    `gorm:"size:65"`
+	FromPubkey        string    `gorm:"size:65"`
+	ToPubkey          string    `gorm:"size:65"`
+	Content           string    `gorm:"size:65535"`
+	Timestamp         time.Time `gorm:"autoUpdateTime"`
+	ReceivedFromRelay string    `gorm:"size:512"`
 }
 
 type RelayList struct {

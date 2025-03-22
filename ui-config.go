@@ -50,7 +50,7 @@ func config(g *gocui.Gui, v *gocui.View) error {
 			TheLog.Println("error setting current view to config")
 			return nil
 		}
-		
+
 		// Update the keybinds view to show main configuration menu keybinds
 		updateMainConfigKeybindsView(g)
 	}
@@ -77,7 +77,7 @@ func configNew(
 		if _, err := g.SetCurrentView("confignew"); err != nil {
 			return err
 		}
-		
+
 		// Update the keybinds view to show configuration menu keybinds
 		updateConfigKeybindsView(g)
 	}
@@ -108,6 +108,13 @@ func activateConfig(
 	}
 	// Clear the subscriptions array
 	nostrSubs = []*nostr.Subscription{}
+	TheLog.Println("Closing existing relays before switching keys")
+	for _, r := range nostrRelays {
+		r.Close()
+		UpdateOrCreateRelayStatus(DB, r.URL, "connection error: switching account")
+	}
+
+	nostrRelays = []*nostr.Relay{}
 
 	// Kick off DM relay subscriptions for the new key
 	TheLog.Printf("Starting DM relay subscriptions for pubkey: %s", accounts[cy].Pubkey)
@@ -115,12 +122,12 @@ func activateConfig(
 
 	g.DeleteView("config")
 	g.SetCurrentView("v2")
-	
+
 	// Reset cursor position and offset to prevent panic
 	v2, _ := g.View("v2")
 	v2.SetCursor(0, 0)
 	CurrOffset = 0
-	
+
 	// Refresh all views to update v2 and v3 with the new active key
 	refreshAllViews(g, v)
 
@@ -177,7 +184,7 @@ func configShowPrivateKey(
 		if _, err := g.SetCurrentView("configshow"); err != nil {
 			return err
 		}
-		
+
 		// Update the keybinds view to show private key reveal screen keybinds
 		updatePrivateKeyRevealKeybindsView(g)
 	}
@@ -233,15 +240,15 @@ func doConfigNew(g *gocui.Gui, v *gocui.View) error {
 func cancelConfig(g *gocui.Gui, v *gocui.View) error {
 	g.DeleteView("config")
 	g.SetCurrentView("v2")
-	
+
 	// Reset cursor position and offset to prevent panic
 	v2, _ := g.View("v2")
 	v2.SetCursor(0, 0)
 	CurrOffset = 0
-	
+
 	// Refresh all views to update v2 and v3
 	refreshAllViews(g, v)
-	
+
 	return nil
 }
 
@@ -324,29 +331,29 @@ func cursorUpConfig(g *gocui.Gui, v *gocui.View) error {
 func cancelConfigNew(g *gocui.Gui, v *gocui.View) error {
 	g.DeleteView("confignew")
 	config(g, v)
-	
+
 	// Reset cursor position and offset to prevent panic
 	v2, _ := g.View("v2")
 	v2.SetCursor(0, 0)
 	CurrOffset = 0
-	
+
 	// Refresh all views to update v2 and v3
 	refreshAllViews(g, v)
-	
+
 	return nil
 }
 
 func cancelConfigShow(g *gocui.Gui, v *gocui.View) error {
 	g.DeleteView("configshow")
 	config(g, v)
-	
+
 	// Reset cursor position and offset to prevent panic
 	v2, _ := g.View("v2")
 	v2.SetCursor(0, 0)
 	CurrOffset = 0
-	
+
 	// Refresh all views to update v2 and v3
 	refreshAllViews(g, v)
-	
+
 	return nil
 }
