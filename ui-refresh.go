@@ -67,8 +67,11 @@ func refreshV2Conversations(g *gocui.Gui, v *gocui.View) error {
 
 	// print the pubkeys we have conversations with
 	newV2meta := []Metadata{}
-	v2.Title = fmt.Sprintf("Pubkey navigator - active conversations (%d)", len(conversations))
 	for pubkey, _ := range conversations {
+		if pubkey == account.Pubkey {
+			// skip ourselves
+			continue
+		}
 		m := Metadata{}
 		if err := DB.First(&m, "pubkey_hex = ?", pubkey).Error; err != nil {
 			TheLog.Printf("error getting metadata for pubkey: %s, %s", pubkey, err)
@@ -82,6 +85,8 @@ func refreshV2Conversations(g *gocui.Gui, v *gocui.View) error {
 		newV2meta = append(newV2meta, m)
 	}
 
+	v2.Title = fmt.Sprintf("Pubkey navigator - active conversations (%d)", len(newV2meta))
+
 	// sort by most recent chatMessage
 	sort.Slice(newV2meta, func(i, j int) bool {
 		conversationLatest1 := conversations[newV2meta[i].PubkeyHex]
@@ -94,6 +99,7 @@ func refreshV2Conversations(g *gocui.Gui, v *gocui.View) error {
 		})
 		return conversationLatest1[len(conversationLatest1)-1].Timestamp.After(conversationLatest2[len(conversationLatest2)-1].Timestamp)
 	})
+
 	v2Meta = newV2meta
 
 	_, vSizeY := v2.Size()
@@ -396,19 +402,12 @@ func refreshV4(g *gocui.Gui, cursor int) error {
 		return err
 	}
 	v4.Clear()
-	v4.Wrap = true
-	v4.Autoscroll = true
 
 	// Apply current theme colors
 	v4.BgColor = uiColorBg
 	v4.FgColor = uiColorFg
 	v4.FrameColor = uiColorBorderFg
 	v4.TitleColor = uiColorBorderFont
-	/*
-		if activeTheme.UseRoundedBorders {
-			v4.FrameRunes = customFrameRunes
-		}
-	*/
 
 	myDMRelays := []DMRelay{}
 	account := Account{}
