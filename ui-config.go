@@ -120,13 +120,13 @@ func activateConfig(
 	TheLog.Printf("Starting DM relay subscriptions for pubkey: %s", accounts[cy].Pubkey)
 	go doDMRelays(DB, context.Background())
 
-	g.DeleteView("config")
-	g.SetCurrentView("v2")
-
 	// Reset cursor position and offset to prevent panic
 	v2, _ := g.View("v2")
 	v2.SetCursor(0, 0)
 	CurrOffset = 0
+
+	g.DeleteView("config")
+	g.SetCurrentView("v2")
 
 	// Refresh all views to update v2 and v3 with the new active key
 	refreshAllViews(g, v)
