@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/signal"
 	"strings"
@@ -125,6 +126,40 @@ func UpdateOrCreateRelayStatus(db *gorm.DB, url string, status string) {
 	}
 }
 
+func performAuth(relay *nostr.Relay) (bool, error) {
+	var account Account
+	DB.Where("active = ?", true).First(&account)
+	if account.Pubkey == "" {
+		TheLog.Println("no active pubkey, skipping relay")
+		return false, errors.New("no active pubkey")
+	}
+	if account.Privatekey != "" {
+		// Decrypt the private key using the global Password
+		decryptedKey := Decrypt(string(Password), account.Privatekey)
+
+		// Set up auth with signing function
+		ctx := context.Background()
+
+		err := relay.Auth(ctx, func(evt *nostr.Event) error {
+			TheLog.Println(evt)
+			checkChallengeTag := evt.Tags.Find("challenge")
+			if checkChallengeTag[1] == "" {
+				TheLog.Println("SOMETHING WONG!!  no challenge present :)")
+			}
+
+			return evt.Sign(decryptedKey)
+		})
+		if err != nil {
+			TheLog.Printf("Failed to authenticate with relay %s: %v\n", relay.URL, err)
+			return false, err
+		} else {
+			TheLog.Printf("Successfully authenticated with relay %s\n", relay.URL)
+			return true, nil
+		}
+	}
+	return false, errors.New("no active account")
+}
+
 func doDMRelays(db *gorm.DB, ctx context.Context) {
 	var account Account
 	db.Where("active = ?", true).First(&account)
@@ -177,7 +212,6 @@ func doDMRelays(db *gorm.DB, ctx context.Context) {
 				TheLog.Printf("failed to subscribe to relay: %s, %v\n", dmr.Url, err)
 			} else {
 				TheLog.Printf(" from relay: %s for pubkey: %s\n", dmr.Url, pubkey)
-				nostrSubs = append(nostrSubs, sub)
 				go func() {
 					processSub(sub, relay, pubkey)
 				}()
@@ -197,12 +231,17 @@ func doDMRelays(db *gorm.DB, ctx context.Context) {
 		}
 
 		// Check if relay requires auth via NIP-11
-		if !preExistingConnection && account.Privatekey != "" && checkRelayRequiresAuth(dmr.Url) {
+		//if !preExistingConnection && account.Privatekey != "" && checkRelayRequiresAuth(dmr.Url) {
+		if !preExistingConnection && account.Privatekey != "" {
 			// Decrypt the private key using the global Password
 			decryptedKey := Decrypt(string(Password), account.Privatekey)
 
 			// Set up auth with signing function
 			err := relay.Auth(ctx, func(evt *nostr.Event) error {
+				checkChallengeTag := evt.Tags.Find("challenge")
+				if checkChallengeTag[1] == " " {
+					TheLog.Println("SOMETHING WONG!!  no challenge present :)")
+				}
 				return evt.Sign(decryptedKey)
 			})
 			if err != nil {
@@ -218,7 +257,6 @@ func doDMRelays(db *gorm.DB, ctx context.Context) {
 				TheLog.Printf("failed to subscribe to relay: %s, %v\n", dmr.Url, err)
 			} else {
 				TheLog.Printf("subscribed to dm feed from relay: %s for pubkey: %s\n", dmr.Url, pubkey)
-				nostrSubs = append(nostrSubs, sub)
 				go func() {
 					processSub(sub, relay, pubkey)
 				}()
@@ -255,20 +293,29 @@ func doRelay(db *gorm.DB, ctx context.Context, url string) bool {
 	nostrRelays = append(nostrRelays, relay)
 
 	// Check if relay requires auth via NIP-11
-	if account.Privatekey != "" && checkRelayRequiresAuth(url) {
-		// Decrypt the private key using the global Password
-		decryptedKey := Decrypt(string(Password), account.Privatekey)
+	/*
+		if account.Privatekey != "" && checkRelayRequiresAuth(url) {
+			// Decrypt the private key using the global Password
+			decryptedKey := Decrypt(string(Password), account.Privatekey)
 
-		// Set up auth with signing function
-		err = relay.Auth(ctx, func(evt *nostr.Event) error {
-			return evt.Sign(decryptedKey)
-		})
-		if err != nil {
-			TheLog.Printf("Failed to authenticate with relay %s: %v\n", url, err)
-		} else {
-			TheLog.Printf("Successfully authenticated with relay %s\n", url)
+			// Set up auth with signing function
+
+			err = relay.Auth(ctx, func(evt *nostr.Event) error {
+				TheLog.Println(evt)
+				checkChallengeTag := evt.Tags.Find("challenge")
+				if checkChallengeTag[1] == "" {
+					TheLog.Println("SOMETHING WONG!!  no challenge present :)")
+				}
+
+				return evt.Sign(decryptedKey)
+			})
+			if err != nil {
+				TheLog.Printf("Failed to authenticate with relay %s: %v\n", url, err)
+			} else {
+				TheLog.Printf("Successfully authenticated with relay %s\n", url)
+			}
 		}
-	}
+	*/
 
 	UpdateOrCreateRelayStatus(db, url, "connection established")
 
@@ -298,7 +345,6 @@ func doRelay(db *gorm.DB, ctx context.Context, url string) bool {
 
 	// create a subscription and submit to relay
 	sub, _ := relay.Subscribe(ctx, hop1Filters)
-	nostrSubs = append(nostrSubs, sub)
 
 	// subscribe to follows for each follow
 	person := Metadata{
@@ -401,7 +447,6 @@ func doRelay(db *gorm.DB, ctx context.Context, url string) bool {
 	}
 
 	hop2Sub, _ := relay.Subscribe(ctx, hop2Filters)
-	nostrSubs = append(nostrSubs, hop2Sub)
 
 	go func() {
 		processSub(sub, relay, pubkey)
@@ -422,7 +467,24 @@ func processSub(sub *nostr.Subscription, relay *nostr.Relay, pubkey string) {
 		UpdateOrCreateRelayStatus(DB, relay.URL, "connection established: EOSE")
 	}()
 
+	go func() {
+		reason := <-sub.ClosedReason
+		TheLog.Printf("got subscription CLOSED reason %s\n", reason)
+		if strings.Contains(reason, "auth-required") {
+			success, err := performAuth(relay)
+			if success {
+				TheLog.Printf("successfully authenticated to %s, re-doing subscription", relay.URL)
+				ctx := context.Background()
+				newSub, _ := relay.Subscribe(ctx, sub.Filters)
+				processSub(newSub, relay, pubkey)
+			} else {
+				TheLog.Printf("Error while authing: %s", err)
+			}
+		}
+	}()
+
 	if sub != nil {
+		nostrSubs = append(nostrSubs, sub)
 		for ev := range sub.Events {
 			if ev.Kind == 0 {
 				// Metadata

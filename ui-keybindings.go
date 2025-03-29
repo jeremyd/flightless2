@@ -50,6 +50,11 @@ func keybindings(g *gocui.Gui) error {
 		log.Panicln(err)
 	}
 
+	// z key for zaps
+	if err := g.SetKeybinding("v2", rune(0x7a), gocui.ModNone, zapUserMenu); err != nil {
+		log.Panicln(err)
+	}
+
 	/* addrelay view */
 	if err := g.SetKeybinding("v2", rune(0x61), gocui.ModNone, addRelay); err != nil {
 		log.Panicln(err)

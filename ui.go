@@ -348,7 +348,15 @@ func postInput(g *gocui.Gui, v *gocui.View) error {
 							}
 							if err := existingRelay.Publish(ctx, ev); err != nil {
 								TheLog.Printf("Error publishing giftwrap to existing relay %s: %v", relayUrl, err)
-
+								if strings.Contains(err.Error(), "auth-required") {
+									TheLog.Printf("Relay is requesting that we authenticate to send")
+									performAuth(existingRelay)
+									if err := existingRelay.Publish(ctx, ev); err != nil {
+										TheLog.Printf("republish after auth failed for %s", existingRelay.URL)
+									} else {
+										TheLog.Printf("RE-Published giftwrap to new relay %s, eventID=%s", relayUrl, ev.ID)
+									}
+								}
 							} else {
 								TheLog.Printf("Published giftwrap to existing relay %s, event_id=%s", relayUrl, ev.ID)
 							}
@@ -387,6 +395,15 @@ func postInput(g *gocui.Gui, v *gocui.View) error {
 						}
 						if err := relay.Publish(ctx, ev); err != nil {
 							TheLog.Printf("Error publishing giftwrap to new relay %s: %v", relayUrl, err)
+							if strings.Contains(err.Error(), "auth-required") {
+								TheLog.Printf("Relay is requesting that we authenticate to send")
+								performAuth(relay)
+								if err := relay.Publish(ctx, ev); err != nil {
+									TheLog.Printf("republish after auth failed for %s", relay.URL)
+								} else {
+									TheLog.Printf("RE-Published giftwrap to new relay %s, eventID=%s", relayUrl, ev.ID)
+								}
+							}
 						} else {
 							TheLog.Printf("Published giftwrap to new relay %s, eventID=%s", relayUrl, ev.ID)
 						}
