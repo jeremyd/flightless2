@@ -198,7 +198,7 @@ func doDMRelays(db *gorm.DB, ctx context.Context) {
 		// check if connection already established
 		var relay *nostr.Relay
 		for _, r := range nostrRelays {
-			if r.URL == dmr.Url && r.IsConnected() {
+			if strings.TrimRight(r.URL, "/") == strings.TrimRight(dmr.Url, "/") && r.IsConnected() {
 				relay = r
 			}
 		}
@@ -213,7 +213,7 @@ func doDMRelays(db *gorm.DB, ctx context.Context) {
 			} else {
 				TheLog.Printf(" from relay: %s for pubkey: %s\n", dmr.Url, pubkey)
 				go func() {
-					processSub(sub, relay, pubkey)
+					processSub(sub, relay, pubkey, false)
 				}()
 			}
 		} else {
@@ -258,7 +258,7 @@ func doDMRelays(db *gorm.DB, ctx context.Context) {
 			} else {
 				TheLog.Printf("subscribed to dm feed from relay: %s for pubkey: %s\n", dmr.Url, pubkey)
 				go func() {
-					processSub(sub, relay, pubkey)
+					processSub(sub, relay, pubkey, false)
 				}()
 			}
 		}
@@ -449,17 +449,17 @@ func doRelay(db *gorm.DB, ctx context.Context, url string) bool {
 	hop2Sub, _ := relay.Subscribe(ctx, hop2Filters)
 
 	go func() {
-		processSub(sub, relay, pubkey)
+		processSub(sub, relay, pubkey, false)
 	}()
 
 	go func() {
-		processSub(hop2Sub, relay, pubkey)
+		processSub(hop2Sub, relay, pubkey, false)
 	}()
 
 	return true
 }
 
-func processSub(sub *nostr.Subscription, relay *nostr.Relay, pubkey string) {
+func processSub(sub *nostr.Subscription, relay *nostr.Relay, pubkey string, authAttempted bool) {
 
 	go func() {
 		<-sub.EndOfStoredEvents
@@ -471,12 +471,16 @@ func processSub(sub *nostr.Subscription, relay *nostr.Relay, pubkey string) {
 		reason := <-sub.ClosedReason
 		TheLog.Printf("got subscription CLOSED reason %s\n", reason)
 		if strings.Contains(reason, "auth-required") {
+			if authAttempted {
+				TheLog.Printf("relay %s denied REQ even after auth, not a member; giving up", relay.URL)
+				return
+			}
 			success, err := performAuth(relay)
 			if success {
 				TheLog.Printf("successfully authenticated to %s, re-doing subscription", relay.URL)
 				ctx := context.Background()
 				newSub, _ := relay.Subscribe(ctx, sub.Filters)
-				processSub(newSub, relay, pubkey)
+				processSub(newSub, relay, pubkey, true)
 			} else {
 				TheLog.Printf("Error while authing: %s", err)
 			}
