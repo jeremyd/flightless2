@@ -276,37 +276,27 @@ func postInput(g *gocui.Gui, v *gocui.View) error {
 			var recipientMeta Metadata
 			DB.Preload("DMRelays").Where("pubkey_hex = ?", m.PubkeyHex).First(&recipientMeta)
 
-			// Collect all unique relays from both sender and receiver
-			uniqueRelays := make(map[string]string) // map[url]relay_for_pubkey
-			for _, relay := range senderMeta.DMRelays {
-				uniqueRelays[relay.Url] = account.Pubkey
+			// Build sender and recipient relay URL sets
+			senderRelayURLs := make(map[string]bool)
+			for _, r := range senderMeta.DMRelays {
+				senderRelayURLs[r.Url] = true
 			}
-			for _, relay := range recipientMeta.DMRelays {
-				uniqueRelays[relay.Url] = m.PubkeyHex
-			}
-
-			// If no DM relays are set, use all connected relays
-			if len(uniqueRelays) == 0 {
-				for _, relay := range nostrRelays {
-					if relay != nil {
-						uniqueRelays[relay.URL] = account.Pubkey
-					}
-				}
+			recipientRelayURLs := make(map[string]bool)
+			for _, r := range recipientMeta.DMRelays {
+				recipientRelayURLs[r.Url] = true
 			}
 
-			if len(uniqueRelays) == 0 {
-				TheLog.Printf("No relays available for sending message")
-				return
-			}
-
-			// Convert unique relays to slice and use first relay as primary
-			targetRelays := make([]string, 0, len(uniqueRelays))
+			// Determine primary relay for GiftWrapEvent (prefer our own)
 			var primaryRelay string
-			for url := range uniqueRelays {
-				if primaryRelay == "" {
+			for url := range senderRelayURLs {
+				primaryRelay = url
+				break
+			}
+			if primaryRelay == "" {
+				for url := range recipientRelayURLs {
 					primaryRelay = url
+					break
 				}
-				targetRelays = append(targetRelays, url)
 			}
 
 			// Create a GiftWrapEvent
@@ -328,45 +318,69 @@ func postInput(g *gocui.Gui, v *gocui.View) error {
 				return
 			}
 
-			// Connect to and publish to all unique relays
+			// Map each relay URL to the wrap key(s) it should receive:
+			// our copy → sender DM relays, recipient copy → recipient DM relays
+			relayWrapKeys := make(map[string][]string)
+			for url := range senderRelayURLs {
+				relayWrapKeys[url] = append(relayWrapKeys[url], account.Pubkey)
+			}
+			for url := range recipientRelayURLs {
+				relayWrapKeys[url] = append(relayWrapKeys[url], m.PubkeyHex)
+			}
+
+			if len(relayWrapKeys) == 0 {
+				TheLog.Printf("No relays available for sending message")
+				return
+			}
+
 			ctx := context.Background()
-			for _, relayUrl := range targetRelays {
-				// Check if we're already connected
+
+			publishWrap := func(r *nostr.Relay, wrapKey string) {
+				wrapLabel := "recipient copy"
+				if wrapKey == account.Pubkey {
+					wrapLabel = "our copy"
+				}
+				wrappedEvent, ok := giftWrap.GiftWraps[wrapKey]
+				if !ok {
+					TheLog.Printf("no giftwrap found for key %s", wrapKey)
+					return
+				}
+				var ev nostr.Event
+				if err := json.Unmarshal([]byte(wrappedEvent), &ev); err != nil {
+					TheLog.Printf("Error unmarshaling wrapped event: %v", err)
+					return
+				}
+				if err := r.Publish(ctx, ev); err != nil {
+					TheLog.Printf("Error publishing giftwrap (%s) to relay %s: %v", wrapLabel, r.URL, err)
+					if strings.Contains(err.Error(), "auth-required") {
+						TheLog.Printf("Relay is requesting that we authenticate to send")
+						performAuth(r)
+						if err := r.Publish(ctx, ev); err != nil {
+							TheLog.Printf("republish after auth failed for %s", r.URL)
+						} else {
+							TheLog.Printf("RE-Published giftwrap (%s) to relay %s, eventID=%s", wrapLabel, r.URL, ev.ID)
+						}
+					}
+				} else {
+					TheLog.Printf("Published giftwrap (%s) to relay %s, eventID=%s", wrapLabel, r.URL, ev.ID)
+				}
+			}
+
+			for relayUrl, wrapKeys := range relayWrapKeys {
 				var isConnected bool
 				for _, existingRelay := range nostrRelays {
-					if existingRelay != nil && existingRelay.URL == relayUrl {
+					if existingRelay != nil && strings.TrimRight(existingRelay.URL, "/") == strings.TrimRight(relayUrl, "/") {
 						if !existingRelay.IsConnected() {
 							existingRelay.Connect(ctx)
 						}
-						// Publish both the sender's and receiver's giftwraps
-						for _, wrappedEvent := range giftWrap.GiftWraps {
-							var ev nostr.Event
-							err := json.Unmarshal([]byte(wrappedEvent), &ev)
-							if err != nil {
-								TheLog.Printf("Error unmarshaling wrapped event: %v", err)
-								continue
-							}
-							if err := existingRelay.Publish(ctx, ev); err != nil {
-								TheLog.Printf("Error publishing giftwrap to existing relay %s: %v", relayUrl, err)
-								if strings.Contains(err.Error(), "auth-required") {
-									TheLog.Printf("Relay is requesting that we authenticate to send")
-									performAuth(existingRelay)
-									if err := existingRelay.Publish(ctx, ev); err != nil {
-										TheLog.Printf("republish after auth failed for %s", existingRelay.URL)
-									} else {
-										TheLog.Printf("RE-Published giftwrap to new relay %s, eventID=%s", relayUrl, ev.ID)
-									}
-								}
-							} else {
-								TheLog.Printf("Published giftwrap to existing relay %s, event_id=%s", relayUrl, ev.ID)
-							}
+						for _, wrapKey := range wrapKeys {
+							publishWrap(existingRelay, wrapKey)
 						}
 						isConnected = true
 						break
 					}
 				}
 
-				// If not connected, connect and publish
 				if !isConnected {
 					relay, err := nostr.RelayConnect(ctx, relayUrl)
 					if err != nil {
@@ -374,8 +388,6 @@ func postInput(g *gocui.Gui, v *gocui.View) error {
 						TheLog.Printf("Failed to connect to relay %s: %v", relayUrl, err)
 						continue
 					}
-
-					// Handle auth if needed
 					if account.Privatekey != "" && checkRelayRequiresAuth(relayUrl) {
 						err = relay.Auth(ctx, func(evt *nostr.Event) error {
 							return evt.Sign(decryptedKey)
@@ -384,32 +396,9 @@ func postInput(g *gocui.Gui, v *gocui.View) error {
 							TheLog.Printf("Failed to authenticate with relay %s: %v", relayUrl, err)
 						}
 					}
-
-					// Publish both the sender's and receiver's giftwraps
-					for _, wrappedEvent := range giftWrap.GiftWraps {
-						var ev nostr.Event
-						err := json.Unmarshal([]byte(wrappedEvent), &ev)
-						if err != nil {
-							TheLog.Printf("Error unmarshaling wrapped event: %v", err)
-							continue
-						}
-						if err := relay.Publish(ctx, ev); err != nil {
-							TheLog.Printf("Error publishing giftwrap to new relay %s: %v", relayUrl, err)
-							if strings.Contains(err.Error(), "auth-required") {
-								TheLog.Printf("Relay is requesting that we authenticate to send")
-								performAuth(relay)
-								if err := relay.Publish(ctx, ev); err != nil {
-									TheLog.Printf("republish after auth failed for %s", relay.URL)
-								} else {
-									TheLog.Printf("RE-Published giftwrap to new relay %s, eventID=%s", relayUrl, ev.ID)
-								}
-							}
-						} else {
-							TheLog.Printf("Published giftwrap to new relay %s, eventID=%s", relayUrl, ev.ID)
-						}
+					for _, wrapKey := range wrapKeys {
+						publishWrap(relay, wrapKey)
 					}
-					// no we want to disconnect from the relay i believe?
-					//nostrRelays = append(nostrRelays, relay)
 					relay.Close()
 				}
 			}

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 
 var nostrSubs []*nostr.Subscription
 var nostrRelays []*nostr.Relay
+var relayAuthLocks sync.Map // map[relay URL] -> chan struct{}
 
 type RelayLimitation struct {
 	AuthRequired bool `json:"auth_required"`
@@ -61,7 +63,7 @@ func checkRelayRequiresAuth(url string) bool {
 
 	var info RelayInfo
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-		TheLog.Printf("Error decoding relay info: %v\n", err)
+		TheLog.Printf("Error decoding relay info from %s (HTTP %d): %v\n", httpURL, resp.StatusCode, err)
 		return false
 	}
 
@@ -475,7 +477,19 @@ func processSub(sub *nostr.Subscription, relay *nostr.Relay, pubkey string, auth
 				TheLog.Printf("relay %s denied REQ even after auth, not a member; giving up", relay.URL)
 				return
 			}
+			done := make(chan struct{})
+			actual, loaded := relayAuthLocks.LoadOrStore(relay.URL, done)
+			if loaded {
+				TheLog.Printf("auth already in progress for %s, waiting", relay.URL)
+				<-actual.(chan struct{})
+				ctx := context.Background()
+				newSub, _ := relay.Subscribe(ctx, sub.Filters)
+				processSub(newSub, relay, pubkey, true)
+				return
+			}
 			success, err := performAuth(relay)
+			relayAuthLocks.Delete(relay.URL)
+			close(done)
 			if success {
 				TheLog.Printf("successfully authenticated to %s, re-doing subscription", relay.URL)
 				ctx := context.Background()
