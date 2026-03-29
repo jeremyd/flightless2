@@ -56,5 +56,3 @@ require (
 	modernc.org/memory v1.9.1 // indirect
 	modernc.org/sqlite v1.36.2 // indirect
 )
-
-replace github.com/nbd-wtf/go-nostr => ../go-nostr
